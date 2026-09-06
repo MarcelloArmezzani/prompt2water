@@ -8,35 +8,24 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Test Jina raw HTML share path
+      - name: Verify browser CORS and cached raw share speed
         shell: bash
         run: |
           set -e
-          npm install --ignore-scripts >/dev/null
-          node --input-type=module <<'JS'
-          import { decodeLoader, extractLoaderPayload } from 'chatgpt-share-parser';
-          import { parseChatGptShare } from './src/share2.js';
-          const cases={
-            normal:'https://chatgpt.com/share/6a9db7fc-2814-83ed-b069-e4ba5dc0ba05',
-            image:'https://chatgpt.com/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e',
-            failing:'https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          };
-          for(const [name,url] of Object.entries(cases)){
-            const t0=Date.now();
-            const r=await fetch(`https://r.jina.ai/${url}`,{headers:{'X-Respond-With':'html','X-Engine':'curl','X-Cache-Tolerance':'3600','Accept':'text/plain'}});
-            const html=await r.text();
-            let ok=false, parsed=null;
-            try{
-              const loader=extractLoaderPayload(html); const decoded=decodeLoader(loader);
-              const route=decoded?.loaderData?.['routes/share.$shareId.($action)'];
-              const data=route?.serverResponse?.data;
-              parsed=parseChatGptShare(data); ok=true;
-            }catch(e){parsed={error:String(e)}}
-            const sums=ok?parsed.turns.reduce((a,t)=>({turns:a.turns+1,tools:a.tools+t.toolCalls,web:a.web+t.web,code:a.code+t.code,images:a.images+t.generatedImages,videos:a.videos+t.generatedVideos,docs:a.docs+t.generatedDocuments}),{turns:0,tools:0,web:0,code:0,images:0,videos:0,docs:0}):{};
-            console.log(name,JSON.stringify({status:r.status,seconds:(Date.now()-t0)/1000,bytes:html.length,flight:html.includes('streamController.enqueue'),ok,title:parsed?.title,...sums,error:parsed?.error||null}));
-          }
-          JS
+          URL='https://r.jina.ai/https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
+          echo '--- preflight ---'
+          curl -sS -X OPTIONS -D - -o /dev/null \
+            -H 'Origin: https://marcelloarmezzani.github.io' \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: x-respond-with,x-engine,x-cache-tolerance,accept' \
+            "$URL" | grep -iE '^(HTTP|access-control|vary)' || true
+          echo '--- request 1 ---'
+          curl -sS -o /dev/null --max-time 15 \
+            -H 'Origin: https://marcelloarmezzani.github.io' \
+            -H 'X-Respond-With: html' -H 'X-Engine: curl' -H 'X-Cache-Tolerance: 3600' \
+            -w 'code=%{http_code} time=%{time_total} size=%{size_download}\n' "$URL"
+          echo '--- request 2 ---'
+          curl -sS -o /dev/null --max-time 15 \
+            -H 'Origin: https://marcelloarmezzani.github.io' \
+            -H 'X-Respond-With: html' -H 'X-Engine: curl' -H 'X-Cache-Tolerance: 3600' \
+            -w 'code=%{http_code} time=%{time_total} size=%{size_download}\n' "$URL"
