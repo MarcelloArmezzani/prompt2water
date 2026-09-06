@@ -1,7 +1,7 @@
 import { MODEL_GROUPS, THINKING_CHOICES, OUTPUT_ENERGY_WH_PER_TOKEN, REFERENCES } from './parameters.js';
 import { estimateConversation } from './core.js';
 import { parseFile, parsePasted } from './importer.js';
-import { parseSharedLink } from './share2.js';
+import { parseSharedLink } from './share2.js?v=20260906-2014';
 import { downloadText,jsonText,htmlText } from './report.js';
 
 const $=s=>document.querySelector(s);
