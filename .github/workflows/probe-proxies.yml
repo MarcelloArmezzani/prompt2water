@@ -8,23 +8,27 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Benchmark raw share HTML relays
+      - name: Inspect GPT Export frontend
         shell: bash
         run: |
-          set +e
-          URL='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$URL")
-          probe(){
-            NAME="$1"; TARGET="$2"; OUT=$(mktemp)
-            META=$(curl -L --max-time 15 -sS -A 'Mozilla/5.0' -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$TARGET" 2>&1)
-            MARKER=$(grep -c 'streamController.enqueue' "$OUT" 2>/dev/null || true)
-            TITLE=$(grep -o '<title>[^<]*' "$OUT" 2>/dev/null | head -1 | cut -c1-120)
-            echo "$NAME $META flight=$MARKER title=$TITLE"
-            rm -f "$OUT"
-          }
-          probe direct "$URL"
-          probe allorigins "https://api.allorigins.win/raw?url=$ENC"
-          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$ENC"
-          probe corsproxyio "https://corsproxy.io/?url=$ENC"
-          probe isomorphic "https://cors.isomorphic-git.org/$URL"
-          probe corslol "https://api.cors.lol/?url=$ENC"
+          set -e
+          BASE='https://gptexport.vercel.app'
+          curl -sSL "$BASE/" -o /tmp/page.html
+          echo '--- script urls ---'
+          grep -oE 'src="[^"]+\.js[^" ]*' /tmp/page.html | sed 's/^src="//' | sort -u | head -30 | tee /tmp/scripts.txt
+          echo '--- candidate endpoints / fetches ---'
+          while read -r s; do
+            case "$s" in http*) u="$s";; *) u="$BASE$s";; esac
+            curl -sSL "$u" || true
+          done < /tmp/scripts.txt > /tmp/all.js
+          python - <<'PY'
+          import re
+          s=open('/tmp/all.js',errors='ignore').read()
+          pats=[r'/api/[A-Za-z0-9_?&=./${}-]+',r'fetch\([^)]{0,300}',r'axios[^;]{0,300}',r'chatgpt\.com/share[^"\']*',r'format.{0,100}json']
+          seen=set()
+          for p in pats:
+              for m in re.finditer(p,s,re.I):
+                  x=m.group(0)
+                  if x not in seen:
+                      seen.add(x); print(x[:700])
+          PY
