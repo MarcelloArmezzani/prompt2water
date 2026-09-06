@@ -8,21 +8,27 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Test null-origin exporter access
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate direct React Flight parser
         shell: bash
         run: |
           set -e
-          SHARE='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$SHARE")
-          URL="https://gptexport.vercel.app/api/export?url=$ENC&format=json&lang=en"
-          for ORIGIN in null NONE https://gptexport.vercel.app; do
-            OUT=$(mktemp); HDR=$(mktemp)
-            if [ "$ORIGIN" = NONE ]; then
-              META=$(curl -sS -L --max-time 20 -D "$HDR" -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$URL")
-            else
-              META=$(curl -sS -L --max-time 20 -H "Origin: $ORIGIN" -D "$HDR" -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$URL")
-            fi
-            echo "$ORIGIN $META prefix=$(head -c 120 "$OUT" | tr '\n' ' ')"
-            grep -iE '^access-control-allow-origin:' "$HDR" || true
-            rm "$OUT" "$HDR"
-          done
+          mkdir /tmp/parser && cd /tmp/parser
+          npm init -y >/dev/null
+          npm install chatgpt-share-parser@latest >/dev/null
+          node --input-type=module <<'JS'
+          import { fetchChatGptShare } from 'chatgpt-share-parser';
+          const cases = {
+            normal:'https://chatgpt.com/share/6a9db7fc-2814-83ed-b069-e4ba5dc0ba05',
+            image:'https://chatgpt.com/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e',
+            failing:'https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
+          };
+          for (const [name,url] of Object.entries(cases)) {
+            const t0=Date.now(); const c=await fetchChatGptShare(url); const dt=(Date.now()-t0)/1000;
+            const roles={}, authors={}, assets={image:0,file:0};
+            for(const r of c.replies){roles[r.type]=(roles[r.type]||0)+1;authors[r.authorName]=(authors[r.authorName]||0)+1;for(const a of r.assets||[])assets[a.assetType]=(assets[a.assetType]||0)+1;}
+            console.log(name,JSON.stringify({seconds:dt,title:c.title,model:c.aiModel,replies:c.replies.length,roles,assets,topAuthors:Object.entries(authors).sort((a,b)=>b[1]-a[1]).slice(0,15)}));
+          }
+          JS
