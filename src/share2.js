@@ -1,6 +1,7 @@
 import { shareDataFromHtml } from './flight.js?v=4';
 
 const memoryCache=new Map();
+const inFlight=new Map();
 const CACHE_PREFIX='p2w:chatgpt-share:v4:';
 
 function shareInfo(rawUrl){
@@ -67,7 +68,13 @@ export async function loadShare(rawUrl){
   if(!info)throw new Error('Paste a public ChatGPT share link.');
   const cached=readCache(info.id);
   if(cached)return cached;
-  const conversation=parseChatGptShare(await fetchShareData(info.url));
-  writeCache(info.id,conversation);
-  return conversation;
+  if(inFlight.has(info.id))return inFlight.get(info.id);
+  const promise=(async()=>{
+    const conversation=parseChatGptShare(await fetchShareData(info.url));
+    writeCache(info.id,conversation);
+    return conversation;
+  })();
+  inFlight.set(info.id,promise);
+  try{return await promise;}
+  finally{inFlight.delete(info.id);}
 }
