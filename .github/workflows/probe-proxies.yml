@@ -1,0 +1,30 @@
+name: Probe ChatGPT share proxies
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Benchmark exact failing share
+        shell: bash
+        run: |
+          set +e
+          ID='6a9de238-6314-83eb-92a0-330979e85d55'
+          API="https://chatgpt.com/backend-api/share/$ID"
+          SHARE="https://chatgpt.com/share/$ID"
+          probe(){
+            NAME="$1"; URL="$2"
+            OUT=$(mktemp)
+            META=$(curl -L --max-time 20 -sS -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$URL" 2>&1)
+            echo "$NAME $META prefix=$(head -c 80 "$OUT" | tr '\n' ' ')"
+            rm -f "$OUT"
+          }
+          probe direct_api "$API"
+          probe allorigins "https://api.allorigins.win/raw?url=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
+          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
+          probe corslol "https://api.cors.lol/?url=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
+          probe jina_api "https://r.jina.ai/$API"
+          probe jina_share "https://r.jina.ai/$SHARE"
