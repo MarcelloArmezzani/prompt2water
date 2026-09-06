@@ -2,7 +2,7 @@ import { MODEL_GROUPS, THINKING_CHOICES, OUTPUT_ENERGY_WH_PER_TOKEN, REFERENCES 
 import { estimateConversation } from './core.js';
 import { parseFile, parsePasted } from './importer.js';
 import { parseSharedLink } from './share.js';
-import { downloadText,jsonText,csvText,htmlText } from './report.js';
+import { downloadText,jsonText,htmlText } from './report.js';
 
 const $=s=>document.querySelector(s);
 let conversations=[], currentEstimate=null;
@@ -53,15 +53,25 @@ function readPaste(){
 }
 function analyze(){if(!conversations.length)return;const c=conversations[Number($('#conversation').value)||0];currentEstimate=estimateConversation(c,$('#model').value,thinking());render(currentEstimate);}
 function render(est){
-  $('#results').hidden=false;$('#water').textContent=`${fmt(est.total_water_ml)} mL`;$('#range').textContent=`${fmt(est.scenario_low_ml)}–${fmt(est.scenario_high_ml)} mL`;$('#energy').textContent=`${fmt(est.total_energy_wh,3)} Wh`;$('#turn-count').textContent=est.turns.length;
-  $('#direct').textContent=`${fmt(est.direct_water_ml)} mL`;$('#indirect').textContent=`${fmt(est.electricity_water_ml)} mL`;$('#model-class').textContent=`${est.model_class} · ${(OUTPUT_ENERGY_WH_PER_TOKEN[est.model_class]*1000).toFixed(2)} Wh / 1000 output tokens`;
-  const share=est.total_water_ml?100*est.direct_water_ml/est.total_water_ml:0;$('#split-direct').style.width=`${share}%`;$('#split-indirect').style.width=`${100-share}%`;
-  const t=est.tools;$('#tools').innerHTML=[['Web searches',t.web],['Code runs',t.code],['Input images',t.image_in],['Generated images',t.image_out],['Videos',t.video],['Documents',t.document]].map(([k,v])=>`<div class="tool-chip"><span>${esc(k)}</span><b>${v}</b></div>`).join('');
-  $('#warnings').innerHTML=est.warnings.map(w=>`<div class="notice warn">${esc(w)}</div>`).join('');renderBars(est.turns);renderTable(est.turns);$('#results').scrollIntoView({behavior:'smooth',block:'start'});
+  $('#results').hidden=false;
+  $('#water').textContent=`${fmt(est.total_water_ml)} mL`;
+  $('#energy').textContent=`${fmt(est.total_energy_wh,3)} Wh`;
+  $('#turn-count').textContent=est.turns.length;
+  $('#direct').textContent=`${fmt(est.direct_water_ml)} mL`;
+  $('#indirect').textContent=`${fmt(est.electricity_water_ml)} mL`;
+  $('#model-class').textContent=`${est.model_class} · ${(OUTPUT_ENERGY_WH_PER_TOKEN[est.model_class]*1000).toFixed(2)} Wh / 1000 output tokens`;
+  const share=est.total_water_ml?100*est.direct_water_ml/est.total_water_ml:0;
+  $('#split-direct').style.width=`${share}%`;$('#split-indirect').style.width=`${100-share}%`;
+  const t=est.tools;
+  $('#tools').innerHTML=[['Web searches',t.web],['Code runs',t.code],['Input images',t.image_in],['Generated images',t.image_out],['Videos',t.video],['Documents',t.document]].map(([k,v])=>`<div class="tool-chip"><span>${esc(k)}</span><b>${v}</b></div>`).join('');
+  $('#warnings').innerHTML=est.warnings.map(w=>`<div class="notice warn">${esc(w)}</div>`).join('');
+  $('#results').scrollIntoView({behavior:'smooth',block:'start'});
 }
-function renderBars(turns){const box=$('#bars');box.innerHTML='';const max=Math.max(0.001,...turns.map(t=>t.total_water_ml));for(const t of turns){const row=document.createElement('div');row.className='bar-row';row.innerHTML=`<div class="bar-label">${t.turn}</div><div class="bar-track"><div class="bar-fill"></div></div><div class="bar-value">${fmt(t.total_water_ml,2)} mL</div>`;row.querySelector('.bar-fill').style.width=`${Math.max(1,100*t.total_water_ml/max)}%`;box.appendChild(row);}}
-function renderTable(turns){$('#turns-body').innerHTML=turns.map(t=>`<tr><td>${t.turn}</td><td>${t.input_tokens.toLocaleString()}</td><td>${t.output_tokens.toLocaleString()}</td><td>${fmt(t.text_energy_wh,4)}</td><td>${fmt(t.tool_energy_wh,4)}</td><td>${fmt(t.total_water_ml,3)}</td><td class="prompt-cell">${esc(t.user_excerpt)}</td></tr>`).join('');}
-function setupDownloads(){$('#download-json').onclick=()=>currentEstimate&&downloadText('prompt2water-estimate.json',jsonText(currentEstimate),'application/json');$('#download-csv').onclick=()=>currentEstimate&&downloadText('prompt2water-turns.csv',csvText(currentEstimate),'text/csv');$('#download-html').onclick=()=>currentEstimate&&downloadText('prompt2water-report.html',htmlText(currentEstimate),'text/html');$('#print').onclick=()=>window.print();}
+function setupDownloads(){
+  $('#download-json').onclick=()=>currentEstimate&&downloadText('prompt2water-estimate.json',jsonText(currentEstimate),'application/json');
+  $('#download-html').onclick=()=>currentEstimate&&downloadText('prompt2water-report.html',htmlText(currentEstimate),'text/html');
+  $('#print').onclick=()=>window.print();
+}
 function setupRefs(){$('#references').innerHTML=REFERENCES.map(([n,u])=>`<li><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n)}</a></li>`).join('');}
 
 initModels();setupDownloads();setupRefs();
