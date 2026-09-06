@@ -37,15 +37,11 @@ const USER_NAMES = ['user', 'you', 'human', 'me'];
 const ASSISTANT_NAMES = ['assistant', 'ai', 'chatgpt', 'claude', 'gemini', 'grok', 'deepseek'];
 
 function classifyMarker(line, provider) {
-  // Current ChatGPT/Jina pages commonly look like:
-  //   1. #### You said:
-  //   2. #### ChatGPT said:
-  // We also accept ordinary Markdown headings, bold labels and compact provider labels.
   let s = String(line || '').trim();
-  s = s.replace(/^>\s*/, '');                         // blockquote
-  s = s.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, '');  // Markdown list marker
-  s = s.replace(/^#{1,6}\s*/, '');                   // heading marker
-  s = s.replace(/^\*\*|\*\*$/g, '').trim();        // bold wrapper
+  s = s.replace(/^>\s*/, '');
+  s = s.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, '');
+  s = s.replace(/^#{1,6}\s*/, '');
+  s = s.replace(/^\*\*|\*\*$/g, '').trim();
 
   const m = s.match(/^([^:]{1,40}?)(?:\s+said)?\s*:\s*(.*)$/i)
         || s.match(/^([^:]{1,40}?)(?:\s+said)?\s*$/i);
@@ -90,15 +86,13 @@ function parseMarkedTranscript(markdown, provider) {
     }
   }
   flush();
-
-  // Remove obvious duplicate/empty chrome turns without changing legitimate repeated prompts.
   return messages.filter(m => m.text && !/^(?:New chat|Log in|Sign up)$/i.test(m.text.trim()));
 }
 
 function enrichSharedTools(conversation) {
   for (const m of conversation.messages) {
     const text = String(m.text || '');
-    const extra = visibleToolsFromText(text);
+    const extra = m.tools || visibleToolsFromText(text);
     if (/^\s*Sources?\s*:?/mi.test(text) || /\b(?:web results?|searched the web)\b/i.test(text)) extra.web = Math.max(extra.web, 1);
     const images = [...text.matchAll(/!\[[^\]]*\]\([^\)]+\)/g)].length;
     if (images) {
@@ -125,11 +119,138 @@ export function parseSharedMarkdown(markdown, provider, url) {
   return [conv];
 }
 
-export async function parseSharedLink(rawUrl) {
-  const url = String(rawUrl || '').trim();
-  const provider = sharedProvider(url);
-  if (!provider) throw new Error('Paste a public share link from ChatGPT, Claude, Gemini, Grok or DeepSeek.');
+function chatGptShareId(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return u.pathname.match(/^\/share\/([0-9a-f-]{16,})/i)?.[1] || null;
+  } catch { return null; }
+}
 
+function parseJsonFromText(text) {
+  const raw = String(text || '').trim();
+  const attempts = [raw];
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  if (fenced) attempts.push(fenced.trim());
+  const first = raw.indexOf('{'), last = raw.lastIndexOf('}');
+  if (first >= 0 && last > first) attempts.push(raw.slice(first, last + 1));
+  for (const candidate of attempts) {
+    try {
+      const value = JSON.parse(candidate);
+      if (value && typeof value === 'object') return value;
+    } catch {}
+  }
+  return null;
+}
+
+function orderedChatGptNodes(share) {
+  if (Array.isArray(share?.linear_conversation) && share.linear_conversation.length) return share.linear_conversation;
+  const mapping = share?.mapping && typeof share.mapping === 'object' ? share.mapping : {};
+  const nodes = Object.values(mapping);
+  if (!nodes.length) return [];
+  let cursor = nodes.find(n => !n?.parent) || nodes[0];
+  const out = [], seen = new Set();
+  while (cursor && !seen.has(cursor.id)) {
+    if (cursor.id) seen.add(cursor.id);
+    out.push(cursor);
+    const child = Array.isArray(cursor.children) ? cursor.children[0] : null;
+    cursor = child ? mapping[child] : null;
+  }
+  return out;
+}
+
+function chatGptVisibleContent(msg) {
+  const content = msg?.content || {};
+  const type = String(content.content_type || '').toLowerCase();
+  if (['model_editable_context', 'thoughts'].includes(type)) return { text: '', images: 0, documents: 0 };
+
+  const chunks = [];
+  let images = 0, documents = 0;
+  const parts = Array.isArray(content.parts) ? content.parts : [];
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      if (part.trim()) chunks.push(part.trim());
+      continue;
+    }
+    if (!part || typeof part !== 'object') continue;
+    const pt = String(part.content_type || part.type || '').toLowerCase();
+    if (pt.includes('image')) images++;
+    else if (pt.includes('file')) documents++;
+  }
+  if (typeof content.text === 'string' && content.text.trim()) chunks.push(content.text.trim());
+
+  const atts = Array.isArray(msg?.metadata?.attachments) ? msg.metadata.attachments : [];
+  for (const a of atts) {
+    const s = `${a?.mime_type || ''} ${a?.name || ''}`.toLowerCase();
+    if (/image\//.test(s) || /\.(png|jpe?g|webp|gif)\b/.test(s)) images++;
+    else documents++;
+  }
+
+  return { text: chunks.join('\n\n').trim(), images, documents };
+}
+
+function parseChatGptShareJson(share, url) {
+  if (!share || (!Array.isArray(share.linear_conversation) && !share.mapping)) return [];
+  const messages = [];
+  for (const node of orderedChatGptNodes(share)) {
+    const msg = node?.message;
+    if (!msg) continue;
+    const role = String(msg?.author?.role || '').toLowerCase();
+    if (!['user', 'assistant'].includes(role)) continue;
+    const meta = msg.metadata || {};
+    if (meta.is_visually_hidden_from_conversation) continue;
+
+    const visible = chatGptVisibleContent(msg);
+    const tools = visibleToolsFromText(visible.text);
+    if (visible.images) {
+      if (role === 'user') tools.image_in += visible.images;
+      else tools.image_out += visible.images;
+    }
+    if (visible.documents) tools.document += visible.documents;
+
+    let text = visible.text;
+    if (!text && visible.images) text = role === 'user' ? '[image]' : '[generated image]';
+    if (!text && visible.documents) text = '[document]';
+    if (!text) continue;
+
+    messages.push({
+      role,
+      text,
+      timestamp: msg.create_time ? String(msg.create_time) : null,
+      tools
+    });
+  }
+
+  if (!messages.some(m => m.role === 'user') || !messages.some(m => m.role === 'assistant')) return [];
+  return [enrichSharedTools({
+    provider: 'ChatGPT',
+    title: String(share.title || 'ChatGPT shared conversation'),
+    messages,
+    source_format: 'chatgpt-share-json',
+    share_url: url,
+    warnings: []
+  })];
+}
+
+async function fetchChatGptStructured(url) {
+  const id = chatGptShareId(url);
+  if (!id) return [];
+  const apiUrl = `https://chatgpt.com/backend-api/share/${id}`;
+  const candidates = [apiUrl, `https://r.jina.ai/${apiUrl}`];
+
+  for (const target of candidates) {
+    try {
+      const response = await fetch(target, { headers: { Accept: 'application/json,text/plain;q=0.9,*/*;q=0.8' } });
+      if (!response.ok) continue;
+      const text = await response.text();
+      const data = parseJsonFromText(text);
+      const parsed = parseChatGptShareJson(data, url);
+      if (parsed.length) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
+async function fetchReaderMarkdown(url, provider) {
   const readerUrl = `https://r.jina.ai/${url}`;
   let response;
   try {
@@ -140,7 +261,20 @@ export async function parseSharedLink(rawUrl) {
   if (!response.ok) throw new Error(`${provider} did not allow this shared page to be read automatically. Try the file or pasted-transcript option.`);
   const text = await response.text();
   if (!text || text.length < 80) throw new Error('The shared page did not contain a readable conversation.');
+  return text;
+}
 
+export async function parseSharedLink(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  const provider = sharedProvider(url);
+  if (!provider) throw new Error('Paste a public share link from ChatGPT, Claude, Gemini, Grok or DeepSeek.');
+
+  if (provider === 'ChatGPT') {
+    const structured = await fetchChatGptStructured(url);
+    if (structured.length) return structured;
+  }
+
+  const text = await fetchReaderMarkdown(url, provider);
   const parsed = parseSharedMarkdown(text, provider, url);
   if (!parsed.length) throw new Error('The shared page was reached, but no alternating user/assistant transcript was found. Try the file or pasted-transcript option.');
   return parsed;
