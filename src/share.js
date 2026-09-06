@@ -188,37 +188,122 @@ function chatGptVisibleContent(msg) {
   return { text: chunks.join('\n\n').trim(), images, documents };
 }
 
+function emptyTools() {
+  return { web: 0, code: 0, image_in: 0, image_out: 0, video: 0, document: 0 };
+}
+
+function addToolCounts(a, b) {
+  const out = emptyTools();
+  for (const k of Object.keys(out)) out[k] = (a?.[k] || 0) + (b?.[k] || 0);
+  return out;
+}
+
+function emptyPending() {
+  return { web: 0, code: 0, imageCalls: 0, imageResults: 0, videoCalls: 0, videoResults: 0 };
+}
+
+function hasPending(p) {
+  return Object.values(p).some(v => v > 0);
+}
+
+function pendingToTools(p) {
+  return {
+    web: p.web,
+    code: p.code,
+    image_in: 0,
+    image_out: Math.max(p.imageCalls, p.imageResults),
+    video: Math.max(p.videoCalls, p.videoResults),
+    document: 0
+  };
+}
+
+function toolCallKind(msg) {
+  const recipient = String(msg?.recipient || '').toLowerCase();
+  const authorName = String(msg?.author?.name || '').toLowerCase();
+  const s = `${recipient} ${authorName}`;
+  if (/image[_-]?gen|text2im|dall[\s._-]?e/.test(s)) return 'image';
+  if (/video[_-]?gen|sora|text2video/.test(s)) return 'video';
+  if (/web\.run|browser|search/.test(s)) return 'web';
+  if (/python|code[_-]?interpreter/.test(s)) return 'code';
+  return null;
+}
+
 function parseChatGptShareJson(share, url) {
   if (!share || (!Array.isArray(share.linear_conversation) && !share.mapping)) return [];
   const messages = [];
+  let pending = emptyPending();
+
+  const flushPendingAsAssistant = () => {
+    if (!hasPending(pending)) return;
+    messages.push({ role: 'assistant', text: '', timestamp: null, tools: pendingToTools(pending) });
+    pending = emptyPending();
+  };
+
   for (const node of orderedChatGptNodes(share)) {
     const msg = node?.message;
     if (!msg) continue;
     const role = String(msg?.author?.role || '').toLowerCase();
-    if (!['user', 'assistant'].includes(role)) continue;
     const meta = msg.metadata || {};
     if (meta.is_visually_hidden_from_conversation) continue;
 
     const visible = chatGptVisibleContent(msg);
-    const tools = visibleToolsFromText(visible.text);
-    if (visible.images) {
-      if (role === 'user') tools.image_in += visible.images;
-      else tools.image_out += visible.images;
+    const callKind = toolCallKind(msg);
+    const recipient = String(msg?.recipient || '').toLowerCase();
+    const isAssistantToolCall = role === 'assistant' && callKind && recipient && recipient !== 'all';
+
+    if (isAssistantToolCall) {
+      if (callKind === 'image') pending.imageCalls++;
+      else if (callKind === 'video') pending.videoCalls++;
+      else if (callKind === 'web') pending.web++;
+      else if (callKind === 'code') pending.code++;
+      continue;
     }
-    if (visible.documents) tools.document += visible.documents;
+
+    if (role === 'tool') {
+      if (visible.images) pending.imageResults += visible.images;
+      if (callKind === 'video') pending.videoResults++;
+      continue;
+    }
+
+    if (role === 'user') {
+      // A visible user message starts a new turn. Preserve any prior tool-only assistant output first.
+      flushPendingAsAssistant();
+      const tools = visibleToolsFromText(visible.text);
+      if (visible.images) tools.image_in += visible.images;
+      if (visible.documents) tools.document += visible.documents;
+      let text = visible.text;
+      if (!text && visible.images) text = '[image]';
+      if (!text && visible.documents) text = '[document]';
+      if (!text) continue;
+      messages.push({ role: 'user', text, timestamp: msg.create_time ? String(msg.create_time) : null, tools });
+      continue;
+    }
+
+    if (role !== 'assistant') continue;
+
+    // Normal visible assistant output. An image asset may be returned on this node rather than a tool node.
+    if (visible.images) pending.imageResults += visible.images;
+    const ownTools = visibleToolsFromText(visible.text);
+    if (visible.documents) ownTools.document += visible.documents;
+    const tools = addToolCounts(ownTools, pendingToTools(pending));
+    pending = emptyPending();
 
     let text = visible.text;
-    if (!text && visible.images) text = role === 'user' ? '[image]' : '[generated image]';
-    if (!text && visible.documents) text = '[document]';
-    if (!text) continue;
+    // Keep tool-only/image-only assistant turns even when there is no visible text.
+    if (!text && tools.image_out === 0 && tools.video === 0 && tools.web === 0 && tools.code === 0) {
+      if (visible.documents) text = '[document]';
+      else continue;
+    }
 
     messages.push({
-      role,
+      role: 'assistant',
       text,
       timestamp: msg.create_time ? String(msg.create_time) : null,
       tools
     });
   }
+
+  flushPendingAsAssistant();
 
   if (!messages.some(m => m.role === 'user') || !messages.some(m => m.role === 'assistant')) return [];
   return [enrichSharedTools({
