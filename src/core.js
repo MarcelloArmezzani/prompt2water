@@ -16,19 +16,24 @@ export function estimateConversation(conversation,model,thinking){
   const modelClass=MODEL_CLASSES[model]||'Standard';
   const eout=OUTPUT_ENERGY_WH_PER_TOKEN[modelClass];
   const r=THINKING_MULTIPLIER[thinking]??0;
-  const history=[];
+  const separatorTokens=countTokens('\n\n');
+  let contextTokens=0,contextMessages=0;
   let totalInputTokens=0,totalOutputTokens=0,totalReasoningTokens=0,totalToolEnergy=0,totalTextEnergy=0;
   const activity={tool_calls:0,web:0,code:0,image_in:0,image_out:0,video:0,document_out:0,document_in:0};
 
   for(const turn of conversation.turns||[]){
     const userText=turn.userText||'',assistantText=turn.assistantText||'';
-    const visibleInput=[...history,userText].filter(Boolean).join('\n\n');
-    const nIn=countTokens(visibleInput),nOut=countTokens(assistantText),reasoningTokens=r*nOut;
+    const userTokens=countTokens(userText),nOut=countTokens(assistantText);
+    const nIn=contextTokens+userTokens+(contextMessages>0&&userText?separatorTokens:0);
+    const reasoningTokens=r*nOut;
     const textEnergy=eout*inputRatio(nIn)*nIn+eout*(1+r)*nOut;
     const toolEnergy=(turn.web||0)*TOOL_ENERGY_WH.web+(turn.code||0)*TOOL_ENERGY_WH.code+(turn.uploadedImages||0)*TOOL_ENERGY_WH.image_in+(turn.generatedImages||0)*TOOL_ENERGY_WH.image_out+(turn.generatedVideos||0)*TOOL_ENERGY_WH.video;
+
     totalInputTokens+=nIn;totalOutputTokens+=nOut;totalReasoningTokens+=reasoningTokens;totalTextEnergy+=textEnergy;totalToolEnergy+=toolEnergy;
     activity.tool_calls+=turn.toolCalls||0;activity.web+=turn.web||0;activity.code+=turn.code||0;activity.image_in+=turn.uploadedImages||0;activity.image_out+=turn.generatedImages||0;activity.video+=turn.generatedVideos||0;activity.document_in+=turn.uploadedDocuments||0;activity.document_out+=turn.generatedDocuments||0;
-    if(userText)history.push(userText);if(assistantText)history.push(assistantText);
+
+    if(userText){contextTokens=nIn;contextMessages++;}
+    if(assistantText){contextTokens+=nOut+(contextMessages>0?separatorTokens:0);contextMessages++;}
   }
 
   const toolEquivalentTokens=totalToolEnergy/eout;
