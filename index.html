@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Prompt2Water estimates the operational water footprint and effective token load of a ChatGPT shared conversation.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://chatgpt.com https://r.jina.ai; object-src 'none'; frame-src 'none'; base-uri 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://r.jina.ai; object-src 'none'; frame-src 'none'; base-uri 'self'">
   <title>Prompt2Water</title>
-  <link rel="stylesheet" href="assets/style.css?v=3">
+  <link rel="stylesheet" href="assets/style.css?v=4">
 </head>
 <body>
   <div class="page">
@@ -59,30 +59,12 @@
         </div>
 
         <div class="grid three">
-          <div class="card stat-card">
-            <span class="label-sm">Visible input tokens</span>
-            <strong id="input-tokens">—</strong>
-          </div>
-          <div class="card stat-card">
-            <span class="label-sm">Visible output tokens</span>
-            <strong id="output-tokens">—</strong>
-          </div>
-          <div class="card stat-card">
-            <span class="label-sm">Estimated reasoning tokens</span>
-            <strong id="reasoning-tokens">—</strong>
-          </div>
-          <div class="card stat-card">
-            <span class="label-sm">Tool-equivalent tokens</span>
-            <strong id="tool-tokens">—</strong>
-          </div>
-          <div class="card stat-card">
-            <span class="label-sm">Assistant turns</span>
-            <strong id="turns">—</strong>
-          </div>
-          <div class="card stat-card">
-            <span class="label-sm">Conversation title</span>
-            <strong id="title">—</strong>
-          </div>
+          <div class="card stat-card"><span class="label-sm">Visible input tokens</span><strong id="input-tokens">—</strong></div>
+          <div class="card stat-card"><span class="label-sm">Visible output tokens</span><strong id="output-tokens">—</strong></div>
+          <div class="card stat-card"><span class="label-sm">Estimated reasoning tokens</span><strong id="reasoning-tokens">—</strong></div>
+          <div class="card stat-card"><span class="label-sm">Tool-equivalent tokens</span><strong id="tool-tokens">—</strong></div>
+          <div class="card stat-card"><span class="label-sm">Assistant turns</span><strong id="turns">—</strong></div>
+          <div class="card stat-card"><span class="label-sm">Conversation title</span><strong id="title">—</strong></div>
         </div>
 
         <div class="grid two split-grid">
@@ -113,6 +95,6 @@
     </footer>
   </div>
   <script src="https://unpkg.com/gpt-tokenizer@3.0.0/dist/o200k_base.js"></script>
-  <script type="module" src="src/app.js?v=3"></script>
+  <script type="module" src="src/app.js?v=4"></script>
 </body>
 </html>
