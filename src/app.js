@@ -1,5 +1,5 @@
 import { MODELS, THINKING_CHOICES } from './parameters.js';
-import { loadShare } from './share2.js?v=4';
+import { loadShare } from './share2.js?v=5';
 import { estimateConversation } from './core.js?v=4';
 
 const $=s=>document.querySelector(s);
