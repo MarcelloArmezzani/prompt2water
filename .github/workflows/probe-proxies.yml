@@ -8,13 +8,21 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Check ChatGPT share page CORS
+      - name: Test null-origin exporter access
         shell: bash
         run: |
           set -e
           SHARE='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          curl -sS -L --max-time 15 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
-            -H 'Origin: https://marcelloarmezzani.github.io' \
-            -D /tmp/headers -o /tmp/share.html -w 'CODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "$SHARE"
-          grep -iE '^(access-control|cache-control|content-type|vary|cross-origin|content-security)' /tmp/headers || true
-          echo "flight=$(grep -c 'streamController.enqueue' /tmp/share.html || true)"
+          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$SHARE")
+          URL="https://gptexport.vercel.app/api/export?url=$ENC&format=json&lang=en"
+          for ORIGIN in null NONE https://gptexport.vercel.app; do
+            OUT=$(mktemp); HDR=$(mktemp)
+            if [ "$ORIGIN" = NONE ]; then
+              META=$(curl -sS -L --max-time 20 -D "$HDR" -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$URL")
+            else
+              META=$(curl -sS -L --max-time 20 -H "Origin: $ORIGIN" -D "$HDR" -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$URL")
+            fi
+            echo "$ORIGIN $META prefix=$(head -c 120 "$OUT" | tr '\n' ' ')"
+            grep -iE '^access-control-allow-origin:' "$HDR" || true
+            rm "$OUT" "$HDR"
+          done
