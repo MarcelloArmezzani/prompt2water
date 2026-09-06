@@ -8,27 +8,17 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect GPT Export frontend
+      - name: Inspect GPT Export inline code
         shell: bash
         run: |
           set -e
-          BASE='https://gptexport.vercel.app'
-          curl -sSL "$BASE/" -o /tmp/page.html
-          echo '--- script urls ---'
-          grep -oE 'src="[^"]+\.js[^" ]*' /tmp/page.html | sed 's/^src="//' | sort -u | head -30 | tee /tmp/scripts.txt
-          echo '--- candidate endpoints / fetches ---'
-          while read -r s; do
-            case "$s" in http*) u="$s";; *) u="$BASE$s";; esac
-            curl -sSL "$u" || true
-          done < /tmp/scripts.txt > /tmp/all.js
+          curl -sSL 'https://gptexport.vercel.app/' -o /tmp/page.html
           python - <<'PY'
           import re
-          s=open('/tmp/all.js',errors='ignore').read()
-          pats=[r'/api/[A-Za-z0-9_?&=./${}-]+',r'fetch\([^)]{0,300}',r'axios[^;]{0,300}',r'chatgpt\.com/share[^"\']*',r'format.{0,100}json']
-          seen=set()
-          for p in pats:
-              for m in re.finditer(p,s,re.I):
-                  x=m.group(0)
-                  if x not in seen:
-                      seen.add(x); print(x[:700])
+          s=open('/tmp/page.html',errors='ignore').read()
+          for needle in ['fetch(', '/api/', 'export', 'shareUrl', 'share_url', 'format']:
+              print('\n###',needle)
+              for m in list(re.finditer(re.escape(needle),s,re.I))[:30]:
+                  a=max(0,m.start()-500); b=min(len(s),m.start()+1500)
+                  print(s[a:b].replace('\n',' ')[:2000])
           PY
