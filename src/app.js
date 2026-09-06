@@ -1,6 +1,6 @@
 import { MODELS, THINKING_CHOICES } from './parameters.js';
-import { loadShare } from './share2.js?v=3';
-import { estimateConversation } from './core.js?v=3';
+import { loadShare } from './share2.js?v=4';
+import { estimateConversation } from './core.js?v=4';
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -40,8 +40,13 @@ function render(r){
 async function analyze(){
   const url=$('#share-url').value.trim();if(!url){status('Paste a ChatGPT share link first.','warn');return;}
   const btn=$('#analyze');btn.disabled=true;btn.textContent='Analyzing…';$('#results').hidden=true;
-  try{status('Loading shared conversation…','info');const conversation=await loadShare(url);status(`Conversation loaded: <b>${esc(conversation.title)}</b>.`,'ok');render(estimateConversation(conversation,$('#model').value,thinking()));}
-  catch(e){console.error(e);status(esc(e.message||String(e)),'warn');}
+  try{
+    status('Reading ChatGPT conversation…','info');
+    const conversation=await loadShare(url);
+    const result=estimateConversation(conversation,$('#model').value,thinking());
+    status(`Loaded <b>${esc(conversation.title)}</b>.`,'ok');
+    render(result);
+  }catch(e){console.error(e);status(esc(e.message||String(e)),'warn');}
   finally{btn.disabled=false;btn.textContent='Analyze';}
 }
 
