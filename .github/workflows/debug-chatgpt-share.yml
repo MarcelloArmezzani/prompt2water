@@ -1,0 +1,47 @@
+name: Debug ChatGPT share structure
+on:
+  push:
+    paths:
+      - '.github/workflows/debug-chatgpt-share.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect share structure
+        shell: bash
+        run: |
+          python - <<'PY'
+          import requests, json
+          url='https://chatgpt.com/backend-api/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e'
+          r=requests.get(url, timeout=30, headers={'User-Agent':'Mozilla/5.0','Referer':'https://chatgpt.com/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e'})
+          print('status', r.status_code, r.headers.get('content-type'))
+          r.raise_for_status()
+          data=r.json()
+          nodes=data.get('linear_conversation') or list((data.get('mapping') or {}).values())
+          print('title', data.get('title'))
+          print('nodes', len(nodes))
+          for i,node in enumerate(nodes):
+              m=(node or {}).get('message') or {}
+              if not m: continue
+              a=m.get('author') or {}
+              c=m.get('content') or {}
+              md=m.get('metadata') or {}
+              parts=c.get('parts') if isinstance(c.get('parts'),list) else []
+              ptypes=[]
+              for p in parts:
+                  if isinstance(p,dict): ptypes.append(p.get('content_type') or p.get('type') or '<dict>')
+                  elif isinstance(p,str): ptypes.append('<text>')
+                  else: ptypes.append(type(p).__name__)
+              print(json.dumps({
+                  'i':i,
+                  'role':a.get('role'),
+                  'author_name':a.get('name'),
+                  'recipient':m.get('recipient'),
+                  'content_type':c.get('content_type'),
+                  'part_types':ptypes,
+                  'metadata_keys':sorted(md.keys()),
+                  'model_slug':md.get('model_slug') or md.get('resolved_model_slug'),
+                  'has_attachments':bool(md.get('attachments')),
+                  'attachments_meta':[{'mime_type':x.get('mime_type'),'name':x.get('name'),'id':x.get('id')} for x in (md.get('attachments') or []) if isinstance(x,dict)],
+              }, ensure_ascii=False))
+          PY
