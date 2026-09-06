@@ -66,7 +66,6 @@
   <div class="result-title"><span>Estimated water footprint</span><span id="model-class" class="muted"></span></div>
   <div class="headline-result"><span id="water">—</span><small>operational water</small></div>
   <div class="metrics">
-    <div><strong id="range">—</strong><span>plausible range</span></div>
     <div><strong id="energy">—</strong><span>estimated energy</span></div>
     <div><strong id="turn-count">—</strong><span>assistant responses</span></div>
   </div>
@@ -81,18 +80,10 @@
       <h3>Visible activity</h3>
       <div class="tool-list" id="tools"></div>
     </div>
-    <div class="panel wide">
-      <h3>Water by response</h3>
-      <div id="bars"></div>
-    </div>
   </div>
 
-  <details class="audit-details">
-    <summary>Turn-by-turn breakdown</summary>
-    <div class="audit"><table><thead><tr><th>Turn</th><th>Input tokens</th><th>Output tokens</th><th>Text Wh</th><th>Tool Wh</th><th>Water mL</th><th>User prompt</th></tr></thead><tbody id="turns-body"></tbody></table></div>
-  </details>
   <div id="warnings"></div>
-  <div class="downloads"><button class="btn ghost" id="download-json">JSON</button><button class="btn ghost" id="download-csv">CSV</button><button class="btn ghost" id="download-html">HTML report</button><button class="btn ghost" id="print">Print</button></div>
+  <div class="downloads"><button class="btn ghost" id="download-json">JSON</button><button class="btn ghost" id="download-html">HTML report</button><button class="btn ghost" id="print">Print</button></div>
 </section>
 
 <section id="method" class="method-section">
