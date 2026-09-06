@@ -1,12 +1,12 @@
 import { MODEL_GROUPS, THINKING_CHOICES, OUTPUT_ENERGY_WH_PER_TOKEN, REFERENCES } from './parameters.js';
 import { estimateConversation } from './core.js';
 import { parseFile, parsePasted } from './importer.js';
-import { parseSharedLink } from './share.js';
+import { parseSharedLink } from './share2.js';
 import { downloadText,jsonText,htmlText } from './report.js';
 
 const $=s=>document.querySelector(s);
 let conversations=[], currentEstimate=null;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const fmt=(n,d=2)=>Number.isFinite(n)?n.toFixed(d):'—';
 
 function initModels(){
