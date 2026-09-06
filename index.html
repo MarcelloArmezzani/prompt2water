@@ -1,102 +1,118 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Prompt2Water estimates the operational water footprint of an AI conversation from a shared chat link or export.">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://r.jina.ai https://chatgpt.com; object-src 'none'; frame-src 'none'; base-uri 'self'">
-<title>Prompt2Water</title>
-<link rel="stylesheet" href="assets/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Prompt2Water estimates the operational water footprint and effective token load of a ChatGPT shared conversation.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://chatgpt.com https://r.jina.ai; object-src 'none'; frame-src 'none'; base-uri 'self'">
+  <title>Prompt2Water</title>
+  <link rel="stylesheet" href="assets/style.css?v=3">
 </head>
 <body>
-<div class="shell">
-<header class="topbar">
-  <a class="brand" href="./">Prompt2Water</a>
-  <nav><a href="#method">Method</a><a href="https://github.com/MarcelloArmezzani/prompt2water" target="_blank" rel="noopener noreferrer">GitHub</a></nav>
-</header>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">Prompt2Water</div>
+      <div class="tag">ChatGPT share link estimator</div>
+    </header>
 
-<main>
-<section class="hero">
-  <h1>How much water did your AI chat use?</h1>
-  <p>Paste a shared conversation from ChatGPT, Claude, Gemini, Grok or DeepSeek. Prompt2Water reconstructs the visible workload and estimates its operational water footprint.</p>
-</section>
+    <main>
+      <section class="hero">
+        <h1>Estimate the water footprint of a ChatGPT conversation</h1>
+        <p>Paste a public ChatGPT share link, choose the model and the thinking level, and Prompt2Water reconstructs the visible conversation, counts the effective computational load, and estimates the associated operational water consumption.</p>
+      </section>
 
-<section class="estimator-card">
-  <label class="field" for="share-url">Shared conversation link</label>
-  <div class="url-row">
-    <input id="share-url" type="url" autocomplete="off" placeholder="https://chatgpt.com/share/...">
-    <button class="btn primary" id="read-link">Read chat</button>
+      <section class="card form-card">
+        <label class="label" for="share-url">ChatGPT share link</label>
+        <div class="row main-row">
+          <input id="share-url" type="url" placeholder="https://chatgpt.com/share/..." autocomplete="off">
+          <button id="analyze" class="button primary">Analyze</button>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label class="label" for="model">Model</label>
+            <select id="model"></select>
+          </div>
+          <div>
+            <label class="label">Thinking level</label>
+            <div id="thinking" class="thinking"></div>
+          </div>
+        </div>
+
+        <div id="status"></div>
+      </section>
+
+      <section id="results" class="results" hidden>
+        <div class="headline">
+          <div class="headline-card">
+            <span class="eyebrow">Total effective tokens</span>
+            <strong id="effective-tokens">—</strong>
+          </div>
+          <div class="headline-card">
+            <span class="eyebrow">Estimated water</span>
+            <strong id="water">—</strong>
+          </div>
+          <div class="headline-card">
+            <span class="eyebrow">Estimated energy</span>
+            <strong id="energy">—</strong>
+          </div>
+        </div>
+
+        <div class="grid three">
+          <div class="card stat-card">
+            <span class="label-sm">Visible input tokens</span>
+            <strong id="input-tokens">—</strong>
+          </div>
+          <div class="card stat-card">
+            <span class="label-sm">Visible output tokens</span>
+            <strong id="output-tokens">—</strong>
+          </div>
+          <div class="card stat-card">
+            <span class="label-sm">Estimated reasoning tokens</span>
+            <strong id="reasoning-tokens">—</strong>
+          </div>
+          <div class="card stat-card">
+            <span class="label-sm">Tool-equivalent tokens</span>
+            <strong id="tool-tokens">—</strong>
+          </div>
+          <div class="card stat-card">
+            <span class="label-sm">Assistant turns</span>
+            <strong id="turns">—</strong>
+          </div>
+          <div class="card stat-card">
+            <span class="label-sm">Conversation title</span>
+            <strong id="title">—</strong>
+          </div>
+        </div>
+
+        <div class="grid two split-grid">
+          <div class="card">
+            <h2>Activity detected</h2>
+            <div id="activity" class="activity"></div>
+          </div>
+          <div class="card">
+            <h2>Water split</h2>
+            <div class="split-bar"><div id="split-direct" class="direct"></div><div id="split-indirect" class="indirect"></div></div>
+            <div class="split-legend">
+              <div><span class="dot direct-dot"></span>Data-centre cooling <b id="direct-water">—</b></div>
+              <div><span class="dot indirect-dot"></span>Electricity generation <b id="indirect-water">—</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card compact">
+          <h2>Method</h2>
+          <p>Prompt2Water sums the visible input context and the assistant output across all turns, adds a reasoning-token multiplier selected by the user, converts detected tools and media outputs into token-equivalent work using literature-based energy coefficients, and finally converts the resulting energy into direct and electricity-related water consumption.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Prompt2Water</span>
+      <span><a href="https://github.com/MarcelloArmezzani/prompt2water" target="_blank" rel="noopener noreferrer">GitHub</a></span>
+    </footer>
   </div>
-  <div class="provider-row"><span>ChatGPT</span><span>Claude</span><span>Gemini</span><span>Grok</span><span>DeepSeek</span></div>
-  <div id="import-status"></div>
-
-  <details class="fallback">
-    <summary>Use a file or pasted transcript instead</summary>
-    <div class="fallback-body">
-      <div class="upload-line">
-        <label class="btn secondary file-button">Choose export<input id="file" type="file" accept=".zip,.tar,.tgz,.gz,.json,.jsonl,.html,.htm,.txt,.md,.log,.docx"></label>
-        <span id="file-name" class="muted">No file selected</span>
-      </div>
-      <div class="or">or</div>
-      <textarea id="paste" placeholder="User: ...&#10;Assistant: ..."></textarea>
-      <button class="btn secondary" id="inspect-paste">Use pasted transcript</button>
-    </div>
-  </details>
-
-  <div id="conversation-wrap" hidden>
-    <label class="field" for="conversation">Conversation</label>
-    <select id="conversation"></select>
-  </div>
-
-  <div class="config-divider"></div>
-  <div class="config-grid">
-    <div>
-      <label class="field" for="model">Model</label>
-      <select id="model"></select>
-    </div>
-    <div>
-      <label class="field">Thinking level</label>
-      <div class="seg-wrap" id="thinking"></div>
-    </div>
-  </div>
-  <button class="btn primary estimate-btn" id="analyze" disabled>Estimate water footprint</button>
-</section>
-
-<section class="results" id="results" hidden>
-  <div class="result-title"><span>Estimated water footprint</span><span id="model-class" class="muted"></span></div>
-  <div class="headline-result"><span id="water">—</span><small>operational water</small></div>
-  <div class="metrics">
-    <div><strong id="energy">—</strong><span>estimated energy</span></div>
-    <div><strong id="turn-count">—</strong><span>assistant responses</span></div>
-  </div>
-
-  <div class="result-grid">
-    <div class="panel">
-      <h3>Water split</h3>
-      <div class="split"><div class="direct" id="split-direct"></div><div class="indirect" id="split-indirect"></div></div>
-      <div class="legend"><span>Data-centre cooling <b id="direct">—</b></span><span>Electricity generation <b id="indirect">—</b></span></div>
-    </div>
-    <div class="panel">
-      <h3>Visible activity</h3>
-      <div class="tool-list" id="tools"></div>
-    </div>
-  </div>
-
-  <div id="warnings"></div>
-  <div class="downloads"><button class="btn ghost" id="download-json">JSON</button><button class="btn ghost" id="download-html">HTML report</button><button class="btn ghost" id="print">Print</button></div>
-</section>
-
-<section id="method" class="method-section">
-  <h2>How it works</h2>
-  <p>For each assistant response, Prompt2Water counts the visible conversation context and generated text, applies a model-class energy coefficient, adds visible tool use, and converts the resulting energy into direct and electricity-related water consumption.</p>
-  <div class="equations"><div>E<sub>chat</sub> = Σ(text energy + visible tool energy)</div><div>W<sub>chat</sub> = 4.1 mL/Wh × E<sub>chat</sub></div></div>
-  <details><summary>Parameters and references</summary><div class="detail-body"><ul><li>Output model classes: 0.15, 0.50, 1.00 and 1.50 Wh per 1000 generated tokens.</li><li>Input-token cost increases with visible context length.</li><li>Thinking levels add 0, 1, 3, 7 or 14 output-token equivalents.</li><li>Visible web, code, image and video operations are added separately.</li><li>Water conversion: 0.2 mL/Wh direct and 3.9 mL/Wh electricity-related.</li></ul><ol id="references"></ol></div></details>
-  <p class="method-note">ChatGPT shares use the public structured share endpoint when available; other public share links use Jina Reader. File imports are processed in the browser.</p>
-</section>
-</main>
-
-<footer><span>Prompt2Water</span><span>Environmental Sustainability project · 2026</span></footer>
-</div>
-<script type="module" src="src/app.js?v=20260906-2014"></script>
+  <script src="https://unpkg.com/gpt-tokenizer@3.0.0/dist/o200k_base.js"></script>
+  <script type="module" src="src/app.js?v=3"></script>
 </body>
 </html>
