@@ -8,39 +8,23 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Benchmark structured share reader
+      - name: Benchmark raw share HTML relays
         shell: bash
         run: |
-          set -e
+          set +e
           URL='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          BODY=$(python - <<'PY'
-          import json
-          print(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_shared_chat","arguments":{"url":"https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55","format":"json","include_reasoning":False,"include_tool_output":True}}}))
-          PY
-          )
-          OUT=$(mktemp)
-          curl -sS -L --max-time 20 \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -o "$OUT" -w 'CODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' \
-            -d "$BODY" https://chat-share-reader.vercel.app/mcp
-          python - "$OUT" <<'PY'
-          import json,sys
-          raw=open(sys.argv[1]).read()
-          print('prefix',raw[:200].replace('\n',' '))
-          obj=json.loads(raw)
-          text=obj.get('result',{}).get('content',[{}])[0].get('text','')
-          print('payload_chars',len(text))
-          try:
-              chat=json.loads(text)
-              print('title',chat.get('title'))
-              print('messageCount',chat.get('messageCount'))
-              roles={}
-              attachments=0
-              for m in chat.get('messages',[]):
-                  roles[m.get('role')]=roles.get(m.get('role'),0)+1
-                  attachments+=len(m.get('attachments',[]) or [])
-              print('roles',roles,'attachments',attachments,'model',chat.get('model'))
-          except Exception as e: print('parse_error',e)
-          PY
-          rm "$OUT"
+          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$URL")
+          probe(){
+            NAME="$1"; TARGET="$2"; OUT=$(mktemp)
+            META=$(curl -L --max-time 15 -sS -A 'Mozilla/5.0' -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "$TARGET" 2>&1)
+            MARKER=$(grep -c 'streamController.enqueue' "$OUT" 2>/dev/null || true)
+            TITLE=$(grep -o '<title>[^<]*' "$OUT" 2>/dev/null | head -1 | cut -c1-120)
+            echo "$NAME $META flight=$MARKER title=$TITLE"
+            rm -f "$OUT"
+          }
+          probe direct "$URL"
+          probe allorigins "https://api.allorigins.win/raw?url=$ENC"
+          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$ENC"
+          probe corsproxyio "https://corsproxy.io/?url=$ENC"
+          probe isomorphic "https://cors.isomorphic-git.org/$URL"
+          probe corslol "https://api.cors.lol/?url=$ENC"
