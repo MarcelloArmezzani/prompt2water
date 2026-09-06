@@ -8,37 +8,13 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Benchmark GPT Export JSON endpoint
+      - name: Check ChatGPT share page CORS
         shell: bash
         run: |
           set -e
           SHARE='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$SHARE")
-          URL="https://gptexport.vercel.app/api/export?url=$ENC&format=json&lang=en"
-          OUT=$(mktemp)
-          curl -sS -L --max-time 20 -D /tmp/headers -H 'Origin: https://marcelloarmezzani.github.io' -o "$OUT" -w 'CODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "$URL"
-          echo '--- response headers ---'
-          grep -iE '^(access-control|cache-control|content-type|server|x-vercel|vary)' /tmp/headers || true
-          echo '--- json shape ---'
-          python - "$OUT" <<'PY'
-          import json,sys
-          raw=open(sys.argv[1],errors='replace').read()
-          print('prefix',raw[:300].replace('\n',' '))
-          try:
-              j=json.loads(raw)
-          except Exception as e:
-              print('JSON_ERROR',e); raise SystemExit
-          print('type',type(j).__name__)
-          if isinstance(j,dict):
-              print('keys',list(j)[:30])
-              for k,v in j.items():
-                  if isinstance(v,list): print('list',k,'len',len(v))
-                  elif isinstance(v,dict): print('dict',k,'keys',list(v)[:20])
-                  elif isinstance(v,(str,int,float,bool)) or v is None: print('scalar',k,repr(v)[:200])
-          elif isinstance(j,list):
-              print('len',len(j)); print('first',repr(j[:1])[:1000])
-          s=raw.lower()
-          for needle in ['image_gen_title','recipient','tool','sandbox:/mnt/data','asset_pointer','mime_type']:
-              print(needle,s.count(needle))
-          PY
-          rm "$OUT"
+          curl -sS -L --max-time 15 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
+            -H 'Origin: https://marcelloarmezzani.github.io' \
+            -D /tmp/headers -o /tmp/share.html -w 'CODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "$SHARE"
+          grep -iE '^(access-control|cache-control|content-type|vary|cross-origin|content-security)' /tmp/headers || true
+          echo "flight=$(grep -c 'streamController.enqueue' /tmp/share.html || true)"
