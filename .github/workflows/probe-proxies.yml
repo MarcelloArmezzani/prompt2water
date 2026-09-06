@@ -8,18 +8,39 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect exact failing share
+      - name: Benchmark structured share reader
         shell: bash
         run: |
-          set +e
-          ID='6a9de238-6314-83eb-92a0-330979e85d55'
-          API="https://chatgpt.com/backend-api/share/$ID"
-          SHARE="https://chatgpt.com/share/$ID"
-          echo '--- direct share, browser UA ---'
-          curl -L --max-time 10 -sS -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36' -w '\nCODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "$SHARE" | head -c 3000
-          echo
-          echo '--- direct API, browser UA + referer ---'
-          curl -L --max-time 10 -sS -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36' -H "Referer: $SHARE" -w '\nCODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "$API" | head -c 3000
-          echo
-          echo '--- Jina normal share ---'
-          curl -L --max-time 10 -sS -w '\nCODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' "https://r.jina.ai/$SHARE" | head -c 5000
+          set -e
+          URL='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
+          BODY=$(python - <<'PY'
+          import json
+          print(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_shared_chat","arguments":{"url":"https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55","format":"json","include_reasoning":False,"include_tool_output":True}}}))
+          PY
+          )
+          OUT=$(mktemp)
+          curl -sS -L --max-time 20 \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -o "$OUT" -w 'CODE=%{http_code} TIME=%{time_total} SIZE=%{size_download}\n' \
+            -d "$BODY" https://chat-share-reader.vercel.app/mcp
+          python - "$OUT" <<'PY'
+          import json,sys
+          raw=open(sys.argv[1]).read()
+          print('prefix',raw[:200].replace('\n',' '))
+          obj=json.loads(raw)
+          text=obj.get('result',{}).get('content',[{}])[0].get('text','')
+          print('payload_chars',len(text))
+          try:
+              chat=json.loads(text)
+              print('title',chat.get('title'))
+              print('messageCount',chat.get('messageCount'))
+              roles={}
+              attachments=0
+              for m in chat.get('messages',[]):
+                  roles[m.get('role')]=roles.get(m.get('role'),0)+1
+                  attachments+=len(m.get('attachments',[]) or [])
+              print('roles',roles,'attachments',attachments,'model',chat.get('model'))
+          except Exception as e: print('parse_error',e)
+          PY
+          rm "$OUT"
