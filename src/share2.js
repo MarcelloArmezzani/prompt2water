@@ -1,8 +1,52 @@
-function shareIdFromUrl(rawUrl){try{const u=new URL(String(rawUrl).trim());if(!/(^|\.)chatgpt\.com$/i.test(u.hostname))return null;return u.pathname.match(/^\/share\/([0-9a-f-]{16,})/i)?.[1]||null;}catch{return null;}}
+import { shareDataFromHtml } from './flight.js?v=4';
 
-function parseJsonFromText(text){const raw=String(text||'').trim(),candidates=[raw];const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];if(fenced)candidates.push(fenced.trim());const a=raw.indexOf('{'),b=raw.lastIndexOf('}');if(a>=0&&b>a)candidates.push(raw.slice(a,b+1));for(const c of candidates){try{const v=JSON.parse(c);if(v&&typeof v==='object')return v;}catch{}}return null;}
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function fetchShareJson(id){const api=`https://chatgpt.com/backend-api/share/${id}`,urls=[api,`https://r.jina.ai/${api}`];for(let attempt=0;attempt<2;attempt++){for(const url of urls){try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),60000);const r=await fetch(url,{headers:{Accept:'application/json,text/plain;q=0.9,*/*;q=0.8'},signal:controller.signal});clearTimeout(timer);if(!r.ok)continue;const data=parseJsonFromText(await r.text());if(data)return data;}catch{}}if(attempt===0)await sleep(750);}throw new Error('Could not retrieve this ChatGPT shared conversation. Please try the link again.');}
+const memoryCache=new Map();
+const CACHE_PREFIX='p2w:chatgpt-share:v4:';
+
+function shareInfo(rawUrl){
+  try{
+    const u=new URL(String(rawUrl).trim());
+    if(u.protocol!=='https:'||!/(^|\.)chatgpt\.com$/i.test(u.hostname))return null;
+    const id=u.pathname.match(/^\/share\/([0-9a-f-]{16,})/i)?.[1];
+    if(!id)return null;
+    return{id,url:`https://chatgpt.com/share/${id}`};
+  }catch{return null;}
+}
+function readCache(id){
+  if(memoryCache.has(id))return memoryCache.get(id);
+  try{
+    const raw=sessionStorage.getItem(CACHE_PREFIX+id);
+    if(raw){const value=JSON.parse(raw);memoryCache.set(id,value);return value;}
+  }catch{}
+  return null;
+}
+function writeCache(id,value){
+  memoryCache.set(id,value);
+  try{sessionStorage.setItem(CACHE_PREFIX+id,JSON.stringify(value));}catch{}
+}
+async function fetchShareData(url){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const response=await fetch(`https://r.jina.ai/${url}`,{
+      headers:{
+        'Accept':'text/plain',
+        'X-Respond-With':'html',
+        'X-Engine':'curl',
+        'X-Cache-Tolerance':'3600'
+      },
+      signal:controller.signal
+    });
+    if(!response.ok)throw new Error(`Share reader returned HTTP ${response.status}.`);
+    const html=await response.text();
+    const data=shareDataFromHtml(html);
+    if(!data)throw new Error('The ChatGPT conversation payload could not be read from this share.');
+    return data;
+  }catch(error){
+    if(error?.name==='AbortError')throw new Error('This unusually large ChatGPT share took too long to load. Please try once more.');
+    throw error;
+  }finally{clearTimeout(timer);}
+}
 
 function orderedNodes(share){if(Array.isArray(share?.linear_conversation)&&share.linear_conversation.length)return share.linear_conversation;const map=share?.mapping&&typeof share.mapping==='object'?share.mapping:null;if(!map)return[];const root=Object.keys(map).find(id=>!map[id]?.parent)||Object.keys(map)[0],out=[],seen=new Set();let id=root;while(id&&map[id]&&!seen.has(id)){seen.add(id);out.push(map[id]);const children=Array.isArray(map[id].children)?map[id].children:[];id=children.find(x=>map[x])||null;}return out.length?out:Object.values(map);}
 function roleOf(msg){const r=String(msg?.author?.role||msg?.role||'').toLowerCase();if(['user','human','you'].includes(r))return'user';if(['assistant','model','chatgpt','bot'].includes(r))return'assistant';if(r==='tool')return'tool';return r;}
@@ -17,4 +61,13 @@ function newTurn(userText='',uploads={}){return{userText,assistantParts:[],uploa
 function finish(turns,t){if(!t)return null;const assistantText=t.assistantParts.join('\n\n').trim(),active=assistantText||t.toolCalls||t.generatedImages.size||t.generatedVideos.size||t.generatedDocuments.size||t.uploadedImages.size||t.uploadedDocuments.size;if(active)turns.push({userText:t.userText,assistantText,uploadedImages:t.uploadedImages.size,uploadedDocuments:t.uploadedDocuments.size,generatedImages:t.generatedImages.size,generatedVideos:t.generatedVideos.size,generatedDocuments:t.generatedDocuments.size,toolCalls:t.toolCalls,web:t.web,code:t.code,imageToolCalls:t.imageToolCalls,videoToolCalls:t.videoToolCalls});return null;}
 
 export function parseChatGptShare(share){const turns=[];let open=null,pendingUser='',pendingUploads={images:[],documents:[]};let currentToolCalls=new Set();for(const node of orderedNodes(share)){const msg=node?.message||node;if(!msg||typeof msg!=='object')continue;const role=roleOf(msg),md=msg.metadata||{};if(!['user','assistant','tool'].includes(role)||md.is_visually_hidden_from_conversation)continue;const text=visibleText(msg),files=structuredFiles(msg);if(role==='user'){open=finish(turns,open);currentToolCalls=new Set();const images=[],documents=[];for(const f of files){if(f.kind==='image')images.push(f.id);else if(f.kind==='document')documents.push(f.id);}pendingUser=pendingUser?`${pendingUser}\n\n${text}`.trim():text;pendingUploads={images:[...new Set(images)],documents:[...new Set(documents)]};continue;}if(!open)open=newTurn(pendingUser,pendingUploads);pendingUser='';pendingUploads={images:[],documents:[]};if(role==='assistant'){const recipient=String(msg.recipient||'').toLowerCase();if(recipient&&recipient!=='all'){const key=String(msg.id||node.id||`${recipient}:${turns.length}:${open.toolCalls}`);if(!currentToolCalls.has(key)){currentToolCalls.add(key);open.toolCalls++;const cat=toolCategory(recipient);if(cat==='web')open.web++;else if(cat==='code')open.code++;else if(cat==='image')open.imageToolCalls++;else if(cat==='video')open.videoToolCalls++;}}else if(text){open.assistantParts.push(text);for(const f of visibleLinkedFiles(text)){if(f.kind==='document')open.generatedDocuments.add(f.id);else if(f.kind==='video')open.generatedVideos.add(f.id);}}continue;}const author=String(msg?.author?.name||'').toLowerCase(),cat=toolCategory(author),explicitImage=Boolean(md.image_gen_title)||cat==='image',explicitVideo=Boolean(md.video_gen_title)||cat==='video';for(const f of files){if(f.kind==='image'&&explicitImage)open.generatedImages.add(f.id);else if(f.kind==='video'&&explicitVideo)open.generatedVideos.add(f.id);}if(explicitImage&&!files.some(f=>f.kind==='image'))open.generatedImages.add(String(msg.id||md.image_gen_title||`img:${turns.length}`));if(explicitVideo&&!files.some(f=>f.kind==='video'))open.generatedVideos.add(String(msg.id||md.video_gen_title||`vid:${turns.length}`));}finish(turns,open);if(!turns.length)throw new Error('No readable ChatGPT turns were found in this share.');return{title:String(share?.title||'Shared ChatGPT conversation'),turns};}
-export async function loadShare(rawUrl){const id=shareIdFromUrl(rawUrl);if(!id)throw new Error('Paste a public ChatGPT share link.');return parseChatGptShare(await fetchShareJson(id));}
+
+export async function loadShare(rawUrl){
+  const info=shareInfo(rawUrl);
+  if(!info)throw new Error('Paste a public ChatGPT share link.');
+  const cached=readCache(info.id);
+  if(cached)return cached;
+  const conversation=parseChatGptShare(await fetchShareData(info.url));
+  writeCache(info.id,conversation);
+  return conversation;
+}
