@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Prompt2Water estimates the operational water footprint of an AI conversation from a shared chat link or export.">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://r.jina.ai; object-src 'none'; frame-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://r.jina.ai https://chatgpt.com; object-src 'none'; frame-src 'none'; base-uri 'self'">
 <title>Prompt2Water</title>
 <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -100,7 +100,7 @@
   <p>For each assistant response, Prompt2Water counts the visible conversation context and generated text, applies a model-class energy coefficient, adds visible tool use, and converts the resulting energy into direct and electricity-related water consumption.</p>
   <div class="equations"><div>E<sub>chat</sub> = Σ(text energy + visible tool energy)</div><div>W<sub>chat</sub> = 4.1 mL/Wh × E<sub>chat</sub></div></div>
   <details><summary>Parameters and references</summary><div class="detail-body"><ul><li>Output model classes: 0.15, 0.50, 1.00 and 1.50 Wh per 1000 generated tokens.</li><li>Input-token cost increases with visible context length.</li><li>Thinking levels add 0, 1, 3, 7 or 14 output-token equivalents.</li><li>Visible web, code, image and video operations are added separately.</li><li>Water conversion: 0.2 mL/Wh direct and 3.9 mL/Wh electricity-related.</li></ul><ol id="references"></ol></div></details>
-  <p class="method-note">Public share links are fetched through Jina Reader. File imports are processed in the browser.</p>
+  <p class="method-note">ChatGPT shares use the public structured share endpoint when available; other public share links use Jina Reader. File imports are processed in the browser.</p>
 </section>
 </main>
 
