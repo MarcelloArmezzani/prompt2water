@@ -12,13 +12,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Validate production Flight filtering
+      - name: Test Jina raw HTML share path
         shell: bash
         run: |
           set -e
           npm install --ignore-scripts >/dev/null
           node --input-type=module <<'JS'
-          import { CHATGPT_SHARE_HEADERS, decodeLoader, extractLoaderPayload } from 'chatgpt-share-parser';
+          import { decodeLoader, extractLoaderPayload } from 'chatgpt-share-parser';
           import { parseChatGptShare } from './src/share2.js';
           const cases={
             normal:'https://chatgpt.com/share/6a9db7fc-2814-83ed-b069-e4ba5dc0ba05',
@@ -27,13 +27,16 @@ jobs:
           };
           for(const [name,url] of Object.entries(cases)){
             const t0=Date.now();
-            const r=await fetch(url,{headers:CHATGPT_SHARE_HEADERS});
+            const r=await fetch(`https://r.jina.ai/${url}`,{headers:{'X-Respond-With':'html','X-Engine':'curl','X-Cache-Tolerance':'3600','Accept':'text/plain'}});
             const html=await r.text();
-            const loader=extractLoaderPayload(html); const decoded=decodeLoader(loader);
-            const route=decoded?.loaderData?.['routes/share.$shareId.($action)'];
-            const data=route?.serverResponse?.data;
-            const c=parseChatGptShare(data);
-            const sums=c.turns.reduce((a,t)=>({turns:a.turns+1,tools:a.tools+t.toolCalls,web:a.web+t.web,code:a.code+t.code,images:a.images+t.generatedImages,videos:a.videos+t.generatedVideos,docs:a.docs+t.generatedDocuments,inImages:a.inImages+t.uploadedImages,inDocs:a.inDocs+t.uploadedDocuments}),{turns:0,tools:0,web:0,code:0,images:0,videos:0,docs:0,inImages:0,inDocs:0});
-            console.log(name,JSON.stringify({seconds:(Date.now()-t0)/1000,bytes:html.length,title:c.title,...sums}));
+            let ok=false, parsed=null;
+            try{
+              const loader=extractLoaderPayload(html); const decoded=decodeLoader(loader);
+              const route=decoded?.loaderData?.['routes/share.$shareId.($action)'];
+              const data=route?.serverResponse?.data;
+              parsed=parseChatGptShare(data); ok=true;
+            }catch(e){parsed={error:String(e)}}
+            const sums=ok?parsed.turns.reduce((a,t)=>({turns:a.turns+1,tools:a.tools+t.toolCalls,web:a.web+t.web,code:a.code+t.code,images:a.images+t.generatedImages,videos:a.videos+t.generatedVideos,docs:a.docs+t.generatedDocuments}),{turns:0,tools:0,web:0,code:0,images:0,videos:0,docs:0}):{};
+            console.log(name,JSON.stringify({status:r.status,seconds:(Date.now()-t0)/1000,bytes:html.length,flight:html.includes('streamController.enqueue'),ok,title:parsed?.title,...sums,error:parsed?.error||null}));
           }
           JS
