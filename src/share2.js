@@ -42,34 +42,55 @@ function assetKeys(msg, info){
   if(!keys.length&&md.image_gen_title)keys.push(`title:${turn}:${md.image_gen_title}`);
   return [...new Set(keys)];
 }
+function turnId(msg,node){
+  const md=msg?.metadata||{};
+  return String(md.turn_exchange_id||md.working_turn_id||md.request_id||node?.id||'');
+}
+function explicitImageToolName(name){
+  return /image[_-]?gen|text2im|dall[\s._-]?e/.test(String(name||'').toLowerCase());
+}
 function parseChatGPT(share,url){
   const nodes=nodesOf(share);if(!nodes.length)return[];
   const messages=[];let pending=emptyTools();
   const seenGenerated=new Set(),seenUserImages=new Set();
+  const calledToolsByTurn=new Map();
   const flushPending=()=>{if(Object.values(pending).some(Boolean)){messages.push({role:'assistant',text:'',timestamp:null,tools:pending});pending=emptyTools();}};
+
   for(const node of nodes){
     const msg=node?.message;if(!msg)continue;
     const role=String(msg?.author?.role||'').toLowerCase(), md=msg.metadata||{}, info=contentInfo(msg);
     const recipient=String(msg.recipient||'').toLowerCase(), author=String(msg?.author?.name||'').toLowerCase();
+    const turn=turnId(msg,node);
 
-    // Tool calls that are explicit in the share JSON.
     if(role==='assistant'&&recipient&&recipient!=='all'){
       if(/web\.run|browser|search/.test(recipient))pending.web++;
       else if(/python|code[_-]?interpreter/.test(recipient))pending.code++;
       else if(/video[_-]?gen|sora|text2video/.test(recipient))pending.video++;
-      // Image tools can have opaque recipient names; their actual result is counted below from image_gen_title/image assets.
+
+      // Record every non-standard tool call. Image generation can use an opaque
+      // recipient name, so we verify it later by matching the result author's
+      // name to this exact assistant tool call in the same turn.
+      if(!calledToolsByTurn.has(turn))calledToolsByTurn.set(turn,new Set());
+      calledToolsByTurn.get(turn).add(recipient);
       continue;
     }
 
     if(role==='tool'){
-      // Current ChatGPT image-generation shares use opaque tool names. The stable signals are
-      // metadata.image_gen_title and image_asset_pointer parts. The same asset can appear twice,
-      // so deduplicate by its asset pointer (falling back to title + turn id).
-      const isImageGen=Boolean(md.image_gen_title)||/image[_-]?gen|text2im|dall[\s._-]?e/.test(`${author} ${recipient}`);
-      if(isImageGen){
+      const calledSameTool=Boolean(author&&calledToolsByTurn.get(turn)?.has(author));
+      const explicitKnownImageTool=explicitImageToolName(`${author} ${recipient}`);
+
+      // A generated image must either come from a known image-generation tool,
+      // or carry image_gen_title AND be the result of an assistant tool call to
+      // this same opaque tool in the same turn. An image_asset_pointer alone is
+      // never enough: uploads and internal multimodal assets use it too.
+      const isVerifiedImageGen=explicitKnownImageTool || (Boolean(md.image_gen_title)&&calledSameTool);
+      if(isVerifiedImageGen){
         const keys=assetKeys(msg,info);let added=0;
         if(keys.length){for(const k of keys)if(!seenGenerated.has(k)){seenGenerated.add(k);added++;}}
-        else {const fallback=`gen:${md.turn_exchange_id||md.working_turn_id||node.id||messages.length}:${md.image_gen_title||author}`;if(!seenGenerated.has(fallback)){seenGenerated.add(fallback);added=1;}}
+        else {
+          const fallback=`gen:${turn}:${md.image_gen_title||author}`;
+          if(!seenGenerated.has(fallback)){seenGenerated.add(fallback);added=1;}
+        }
         pending.image_out+=added;
       }
       continue;
@@ -99,7 +120,7 @@ function parseChatGPT(share,url){
   }
   flushPending();
   if(!messages.some(m=>m.role==='user')||!messages.some(m=>m.role==='assistant'))return[];
-  return [{provider:'ChatGPT',title:String(share.title||'ChatGPT shared conversation'),messages,source_format:'chatgpt-share-json-v2',share_url:url,warnings:[]}];
+  return [{provider:'ChatGPT',title:String(share.title||'ChatGPT shared conversation'),messages,source_format:'chatgpt-share-json-v3',share_url:url,warnings:[]}];
 }
 async function fetchStructured(url){
   const id=shareId(url);if(!id)return[];const api=`https://chatgpt.com/backend-api/share/${id}`;
@@ -108,9 +129,16 @@ async function fetchStructured(url){
   }
   return[];
 }
+function removeUnverifiedLegacyImageCounts(conversations){
+  for(const conv of conversations||[])for(const msg of conv.messages||[])if(msg?.tools)msg.tools.image_out=0;
+  return conversations;
+}
 export async function parseSharedLink(url){
   if(sharedProvider(url)==='ChatGPT'){
     const parsed=await fetchStructured(String(url).trim());if(parsed.length)return parsed;
+    // If structured verification is unavailable, prefer a conservative zero to
+    // turning ordinary image assets in the rendered page into false generations.
+    return removeUnverifiedLegacyImageCounts(await legacyParseSharedLink(url));
   }
   return legacyParseSharedLink(url);
 }
