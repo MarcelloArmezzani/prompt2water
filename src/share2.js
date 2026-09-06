@@ -1,5 +1,4 @@
 import { parseSharedLink as legacyParseSharedLink, sharedProvider } from './share.js';
-import { visibleToolsFromText } from './parsers.js';
 
 function emptyTools(){return {web:0,code:0,image_in:0,image_out:0,video:0,document:0};}
 function addTools(a,b){const out=emptyTools();for(const k of Object.keys(out))out[k]=(a?.[k]||0)+(b?.[k]||0);return out;}
@@ -62,14 +61,14 @@ function parseChatGPT(share,url){
     const recipient=String(msg.recipient||'').toLowerCase(), author=String(msg?.author?.name||'').toLowerCase();
     const turn=turnId(msg,node);
 
+    // For structured ChatGPT shares, tool use is inferred ONLY from actual
+    // structured calls/results. Conversation prose is never scanned for words
+    // such as "generated image", "searched the web", or "ran code".
     if(role==='assistant'&&recipient&&recipient!=='all'){
       if(/web\.run|browser|search/.test(recipient))pending.web++;
       else if(/python|code[_-]?interpreter/.test(recipient))pending.code++;
       else if(/video[_-]?gen|sora|text2video/.test(recipient))pending.video++;
 
-      // Record every non-standard tool call. Image generation can use an opaque
-      // recipient name, so we verify it later by matching the result author's
-      // name to this exact assistant tool call in the same turn.
       if(!calledToolsByTurn.has(turn))calledToolsByTurn.set(turn,new Set());
       calledToolsByTurn.get(turn).add(recipient);
       continue;
@@ -78,11 +77,6 @@ function parseChatGPT(share,url){
     if(role==='tool'){
       const calledSameTool=Boolean(author&&calledToolsByTurn.get(turn)?.has(author));
       const explicitKnownImageTool=explicitImageToolName(`${author} ${recipient}`);
-
-      // A generated image must either come from a known image-generation tool,
-      // or carry image_gen_title AND be the result of an assistant tool call to
-      // this same opaque tool in the same turn. An image_asset_pointer alone is
-      // never enough: uploads and internal multimodal assets use it too.
       const isVerifiedImageGen=explicitKnownImageTool || (Boolean(md.image_gen_title)&&calledSameTool);
       if(isVerifiedImageGen){
         const keys=assetKeys(msg,info);let added=0;
@@ -102,7 +96,7 @@ function parseChatGPT(share,url){
 
     if(role==='user'){
       flushPending();
-      const tools=visibleToolsFromText(info.text);
+      const tools=emptyTools();
       const keys=assetKeys(msg,info);for(const k of keys)if(!seenUserImages.has(k)){seenUserImages.add(k);tools.image_in++;}
       if(info.documents)tools.document+=info.documents;
       let text=info.text;if(!text&&tools.image_in)text='[image]';if(!text&&tools.document)text='[document]';if(!text)continue;
@@ -112,7 +106,7 @@ function parseChatGPT(share,url){
 
     if(role!=='assistant')continue;
     if(md.is_thinking_preamble_message)continue;
-    const tools=addTools(visibleToolsFromText(info.text),pending);pending=emptyTools();
+    const tools=addTools(emptyTools(),pending);pending=emptyTools();
     if(info.documents)tools.document+=info.documents;
     let text=info.text;
     if(!text&&!Object.values(tools).some(Boolean))continue;
@@ -120,7 +114,7 @@ function parseChatGPT(share,url){
   }
   flushPending();
   if(!messages.some(m=>m.role==='user')||!messages.some(m=>m.role==='assistant'))return[];
-  return [{provider:'ChatGPT',title:String(share.title||'ChatGPT shared conversation'),messages,source_format:'chatgpt-share-json-v3',share_url:url,warnings:[]}];
+  return [{provider:'ChatGPT',title:String(share.title||'ChatGPT shared conversation'),messages,source_format:'chatgpt-share-json-v4',share_url:url,warnings:[]}];
 }
 async function fetchStructured(url){
   const id=shareId(url);if(!id)return[];const api=`https://chatgpt.com/backend-api/share/${id}`;
@@ -136,8 +130,6 @@ function removeUnverifiedLegacyImageCounts(conversations){
 export async function parseSharedLink(url){
   if(sharedProvider(url)==='ChatGPT'){
     const parsed=await fetchStructured(String(url).trim());if(parsed.length)return parsed;
-    // If structured verification is unavailable, prefer a conservative zero to
-    // turning ordinary image assets in the rendered page into false generations.
     return removeUnverifiedLegacyImageCounts(await legacyParseSharedLink(url));
   }
   return legacyParseSharedLink(url);
