@@ -15,6 +15,7 @@ jobs:
           ID='6a9de238-6314-83eb-92a0-330979e85d55'
           API="https://chatgpt.com/backend-api/share/$ID"
           SHARE="https://chatgpt.com/share/$ID"
+          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$API")
           probe(){
             NAME="$1"; URL="$2"
             OUT=$(mktemp)
@@ -23,8 +24,8 @@ jobs:
             rm -f "$OUT"
           }
           probe direct_api "$API"
-          probe allorigins "https://api.allorigins.win/raw?url=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
-          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
-          probe corslol "https://api.cors.lol/?url=$(python -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["API"],safe=""))' API="$API")"
+          probe allorigins "https://api.allorigins.win/raw?url=$ENC"
+          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$ENC"
+          probe corslol "https://api.cors.lol/?url=$ENC"
           probe jina_api "https://r.jina.ai/$API"
           probe jina_share "https://r.jina.ai/$SHARE"
