@@ -1,0 +1,11 @@
+{
+  "name": "prompt2water",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chatgpt-share-parser": "0.1.1"
+  }
+}
