@@ -7,16 +7,32 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect share structure
+      - name: Inspect share structure through Jina
         shell: bash
         run: |
           python - <<'PY'
-          import requests, json
-          url='https://chatgpt.com/backend-api/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e'
-          r=requests.get(url, timeout=30, headers={'User-Agent':'Mozilla/5.0','Referer':'https://chatgpt.com/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e'})
+          import requests, json, re
+          target='https://chatgpt.com/backend-api/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e'
+          url='https://r.jina.ai/'+target
+          r=requests.get(url, timeout=60, headers={'User-Agent':'Mozilla/5.0','Accept':'text/plain'})
           print('status', r.status_code, r.headers.get('content-type'))
           r.raise_for_status()
-          data=r.json()
+          raw=r.text.strip()
+          print('prefix', repr(raw[:120]))
+          candidates=[raw]
+          m=re.search(r'```(?:json)?\s*([\s\S]*?)```', raw, re.I)
+          if m: candidates.append(m.group(1).strip())
+          a,b=raw.find('{'),raw.rfind('}')
+          if a>=0 and b>a: candidates.append(raw[a:b+1])
+          data=None
+          for c in candidates:
+              try:
+                  data=json.loads(c); break
+              except Exception: pass
+          if data is None:
+              print('NO_JSON')
+              print(raw[:3000])
+              raise SystemExit(2)
           nodes=data.get('linear_conversation') or list((data.get('mapping') or {}).values())
           print('title', data.get('title'))
           print('nodes', len(nodes))
@@ -32,16 +48,10 @@ jobs:
                   if isinstance(p,dict): ptypes.append(p.get('content_type') or p.get('type') or '<dict>')
                   elif isinstance(p,str): ptypes.append('<text>')
                   else: ptypes.append(type(p).__name__)
+              relevant={k:md.get(k) for k in md if any(x in k.lower() for x in ['image','tool','model','asset','attachment','recipient','finish'])}
               print(json.dumps({
-                  'i':i,
-                  'role':a.get('role'),
-                  'author_name':a.get('name'),
-                  'recipient':m.get('recipient'),
-                  'content_type':c.get('content_type'),
-                  'part_types':ptypes,
-                  'metadata_keys':sorted(md.keys()),
-                  'model_slug':md.get('model_slug') or md.get('resolved_model_slug'),
-                  'has_attachments':bool(md.get('attachments')),
-                  'attachments_meta':[{'mime_type':x.get('mime_type'),'name':x.get('name'),'id':x.get('id')} for x in (md.get('attachments') or []) if isinstance(x,dict)],
-              }, ensure_ascii=False))
+                  'i':i,'role':a.get('role'),'author_name':a.get('name'),'recipient':m.get('recipient'),
+                  'content_type':c.get('content_type'),'part_types':ptypes,'metadata_relevant':relevant,
+                  'metadata_keys':sorted(md.keys())
+              }, ensure_ascii=False, default=str))
           PY
