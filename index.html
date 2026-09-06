@@ -3,61 +3,108 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Prompt2Water estimates the operational water consumption associated with a visible LLM conversation. Files are processed locally in your browser.">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'">
-<title>Prompt2Water · LLM water footprint estimator</title>
+<meta name="description" content="Prompt2Water estimates the operational water footprint of an AI conversation from a shared chat link or export.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://r.jina.ai; object-src 'none'; frame-src 'none'; base-uri 'self'">
+<title>Prompt2Water</title>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 <div class="shell">
-<header class="topbar"><div class="brand">Prompt2Water</div><div class="privacy-pill">🔒 Browser-only processing</div></header>
+<header class="topbar">
+  <a class="brand" href="./">Prompt2Water</a>
+  <nav><a href="#method">Method</a><a href="https://github.com/MarcelloArmezzani/prompt2water" target="_blank" rel="noopener noreferrer">GitHub</a></nav>
+</header>
+
+<main>
 <section class="hero">
-  <div class="eyebrow">Environmental sustainability · user-level estimator</div>
   <h1>How much water did your AI chat use?</h1>
-  <p>Upload a normal conversation from ChatGPT, Claude, Gemini, Grok or DeepSeek, tell us the model and thinking level, and obtain an approximate <strong>operational water footprint</strong> from the workload that is actually visible to you.</p>
-  <div class="hero-note"><span>No login or API key</span><span>No chat is uploaded to a server</span><span>Open methodology</span></div>
+  <p>Paste a shared conversation from ChatGPT, Claude, Gemini, Grok or DeepSeek. Prompt2Water reconstructs the visible workload and estimates its operational water footprint.</p>
 </section>
-<section class="workflow">
-  <div class="card">
-    <div class="step">Step 1</div><h2>Import your conversation</h2>
-    <div class="dropzone" id="dropzone"><input id="file" type="file" accept=".zip,.tar,.tgz,.gz,.json,.jsonl,.html,.htm,.txt,.md,.log,.docx"><div class="drop-icon">⇧</div><div class="file-name" id="file-name">Choose a file or drop it here</div><div class="file-types">Native ZIP exports, Gemini Takeout, JSON, HTML, TXT/Markdown, DOCX</div></div>
-    <div class="or">or paste a visible transcript</div>
-    <textarea id="paste" placeholder="User: ...&#10;Assistant: ..."></textarea>
-    <div class="button-row"><button class="btn secondary" id="inspect">Inspect conversation</button><button class="btn ghost" id="sample">Load example</button></div>
-    <div id="import-status"></div>
-    <label class="field" for="conversation">Conversation</label><select id="conversation" disabled><option>Inspect an import first</option></select>
+
+<section class="estimator-card">
+  <label class="field" for="share-url">Shared conversation link</label>
+  <div class="url-row">
+    <input id="share-url" type="url" autocomplete="off" placeholder="https://chatgpt.com/share/...">
+    <button class="btn primary" id="read-link">Read chat</button>
   </div>
-  <div class="card">
-    <div class="step">Step 2</div><h2>Tell us only two things</h2>
-    <label class="field" for="model">Model</label><select id="model"></select>
-    <label class="field">Thinking level</label><div class="seg-wrap" id="thinking"></div>
-    <div class="button-row"><button class="btn primary" id="analyze" disabled>Estimate water footprint</button></div>
-    <p class="micro">All remaining workload information is reconstructed from the visible conversation. Hidden provider-side information is excluded rather than guessed.</p>
+  <div class="provider-row"><span>ChatGPT</span><span>Claude</span><span>Gemini</span><span>Grok</span><span>DeepSeek</span></div>
+  <div id="import-status"></div>
+
+  <details class="fallback">
+    <summary>Use a file or pasted transcript instead</summary>
+    <div class="fallback-body">
+      <div class="upload-line">
+        <label class="btn secondary file-button">Choose export<input id="file" type="file" accept=".zip,.tar,.tgz,.gz,.json,.jsonl,.html,.htm,.txt,.md,.log,.docx"></label>
+        <span id="file-name" class="muted">No file selected</span>
+      </div>
+      <div class="or">or</div>
+      <textarea id="paste" placeholder="User: ...&#10;Assistant: ..."></textarea>
+      <button class="btn secondary" id="inspect-paste">Use pasted transcript</button>
+    </div>
+  </details>
+
+  <div id="conversation-wrap" hidden>
+    <label class="field" for="conversation">Conversation</label>
+    <select id="conversation"></select>
   </div>
+
+  <div class="config-divider"></div>
+  <div class="config-grid">
+    <div>
+      <label class="field" for="model">Model</label>
+      <select id="model"></select>
+    </div>
+    <div>
+      <label class="field">Thinking level</label>
+      <div class="seg-wrap" id="thinking"></div>
+    </div>
+  </div>
+  <button class="btn primary estimate-btn" id="analyze" disabled>Estimate water footprint</button>
 </section>
+
 <section class="results" id="results" hidden>
-  <div class="section-head"><div><div class="step">Result</div><h2>Your conversation audit</h2></div><div class="micro" id="model-class"></div></div>
+  <div class="result-title"><span>Estimated water footprint</span><span id="model-class" class="muted"></span></div>
+  <div class="headline-result"><span id="water">—</span><small>operational water</small></div>
   <div class="metrics">
-    <div class="metric primary"><div class="value" id="water">—</div><div class="label">central operational-water estimate</div></div>
-    <div class="metric"><div class="value" id="range">—</div><div class="label">sensitivity range</div></div>
-    <div class="metric"><div class="value" id="energy">—</div><div class="label">estimated facility energy</div></div>
-    <div class="metric"><div class="value" id="turn-count">—</div><div class="label">assistant responses analyzed</div></div>
+    <div><strong id="range">—</strong><span>plausible range</span></div>
+    <div><strong id="energy">—</strong><span>estimated energy</span></div>
+    <div><strong id="turn-count">—</strong><span>assistant responses</span></div>
   </div>
+
   <div class="result-grid">
-    <div class="panel"><h3>Where the water estimate comes from</h3><div class="split"><div class="direct" id="split-direct"></div><div class="indirect" id="split-indirect"></div></div><div class="legend"><span>Direct cooling <b id="direct">—</b></span><span>Electricity-related <b id="indirect">—</b></span></div></div>
-    <div class="panel"><h3>Visible operations detected</h3><div class="tool-list" id="tools"></div></div>
-    <div class="panel"><h3>Water by assistant response</h3><div id="bars"></div></div>
-    <div class="panel"><h3>Interpretation</h3><p class="muted">This is an educational estimate based on visible workload and literature-calibrated averages, not a measurement from the provider's data centre. The range is designed to make the main uncertainty visible rather than hide it behind a single precise number.</p><div id="warnings"></div></div>
+    <div class="panel">
+      <h3>Water split</h3>
+      <div class="split"><div class="direct" id="split-direct"></div><div class="indirect" id="split-indirect"></div></div>
+      <div class="legend"><span>Data-centre cooling <b id="direct">—</b></span><span>Electricity generation <b id="indirect">—</b></span></div>
+    </div>
+    <div class="panel">
+      <h3>Visible activity</h3>
+      <div class="tool-list" id="tools"></div>
+    </div>
+    <div class="panel wide">
+      <h3>Water by response</h3>
+      <div id="bars"></div>
+    </div>
   </div>
-  <div class="audit"><table><thead><tr><th>Turn</th><th>Visible input tokens</th><th>Output tokens</th><th>Text Wh</th><th>Tool Wh</th><th>Water mL</th><th>User prompt</th></tr></thead><tbody id="turns-body"></tbody></table></div>
-  <div class="downloads"><button class="btn ghost" id="download-json">Download JSON</button><button class="btn ghost" id="download-csv">Download CSV</button><button class="btn ghost" id="download-html">Download HTML report</button><button class="btn ghost" id="print">Print / save PDF</button></div>
+
+  <details class="audit-details">
+    <summary>Turn-by-turn breakdown</summary>
+    <div class="audit"><table><thead><tr><th>Turn</th><th>Input tokens</th><th>Output tokens</th><th>Text Wh</th><th>Tool Wh</th><th>Water mL</th><th>User prompt</th></tr></thead><tbody id="turns-body"></tbody></table></div>
+  </details>
+  <div id="warnings"></div>
+  <div class="downloads"><button class="btn ghost" id="download-json">JSON</button><button class="btn ghost" id="download-csv">CSV</button><button class="btn ghost" id="download-html">HTML report</button><button class="btn ghost" id="print">Print</button></div>
 </section>
-<section id="method">
-<details open><summary>Method and assumptions</summary><div class="detail-body"><div class="method-grid"><div><p>The estimator reconstructs the visible input context before each assistant answer, counts the visible output, and adds only tool operations that can be detected in the imported chat. The user supplies the model and thinking level.</p><div class="equation">E<sub>chat</sub> = Σ [ text-token energy + visible tool energy ]</div></div><div><p>Water is reported as direct data-centre water plus electricity-related water, using the location-independent operational coefficients fixed in the accompanying report.</p><div class="equation">W<sub>chat</sub> = 4.1 mL/Wh × E<sub>chat</sub></div></div></div><ul><li>Output energy classes: 0.15, 0.50, 1.00 and 1.50 Wh per 1000 generated tokens.</li><li>Input cost: 10%, 20% or 35% of output-token cost depending on visible context length.</li><li>Thinking multipliers: 0, 1, 3, 7 and 14 hidden-token equivalents.</li><li>Visible tools: web 0.04 Wh/search; short code 0.01 Wh/run; image understanding 0.06 Wh/image; image generation 2.9 Wh/image; video generation 25 Wh/clip.</li><li>Water: 0.2 mL/Wh direct + 3.9 mL/Wh electricity-related.</li><li>Excluded: hidden prompts, cache hits, invisible retries/tools, server location, exact hardware, training and manufacturing water.</li></ul></div></details>
-<details id="about"><summary>Privacy and supported imports</summary><div class="detail-body"><p><strong>Your chat is not uploaded by this website.</strong> The application has no backend and the page's Content Security Policy blocks network connections from the estimator. Files are opened with browser APIs and discarded when the page is closed.</p><p>Dedicated parsers are included for ChatGPT conversation exports, Claude conversation exports and Gemini Takeout activity. Tolerant JSON/HTML/text parsers cover Grok, DeepSeek and generic saved chats. ZIP, TAR/TGZ and DOCX processing is implemented locally. For a PDF printout, copy/paste the visible transcript instead.</p></div></details>
-<details><summary>Scientific references</summary><div class="detail-body"><ol id="references"></ol></div></details>
+
+<section id="method" class="method-section">
+  <h2>How it works</h2>
+  <p>For each assistant response, Prompt2Water counts the visible conversation context and generated text, applies a model-class energy coefficient, adds visible tool use, and converts the resulting energy into direct and electricity-related water consumption.</p>
+  <div class="equations"><div>E<sub>chat</sub> = Σ(text energy + visible tool energy)</div><div>W<sub>chat</sub> = 4.1 mL/Wh × E<sub>chat</sub></div></div>
+  <details><summary>Parameters and references</summary><div class="detail-body"><ul><li>Output model classes: 0.15, 0.50, 1.00 and 1.50 Wh per 1000 generated tokens.</li><li>Input-token cost increases with visible context length.</li><li>Thinking levels add 0, 1, 3, 7 or 14 output-token equivalents.</li><li>Visible web, code, image and video operations are added separately.</li><li>Water conversion: 0.2 mL/Wh direct and 3.9 mL/Wh electricity-related.</li></ul><ol id="references"></ol></div></details>
+  <p class="method-note">Public share links are fetched through Jina Reader. File imports are processed in the browser.</p>
 </section>
-<footer class="footer"><strong>Prompt2Water</strong> · static GitHub Pages edition. Educational operational-water estimator; not a provider disclosure or physical meter.</footer>
+</main>
+
+<footer><span>Prompt2Water</span><span>Environmental Sustainability project · 2026</span></footer>
 </div>
 <script type="module" src="src/app.js"></script>
 </body>
