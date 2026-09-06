@@ -1,0 +1,43 @@
+name: Debug ChatGPT document structure
+on:
+  push:
+    paths:
+      - '.github/workflows/debug-doc-share.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect document-related structure
+        shell: bash
+        run: |
+          python - <<'PY'
+          import requests, json, re
+          sid='6a9dc48f-9250-83eb-83ae-4b012ef7b1be'
+          target='https://chatgpt.com/backend-api/share/'+sid
+          r=requests.get('https://r.jina.ai/'+target, timeout=90, headers={'Accept':'text/plain'})
+          print('status',r.status_code)
+          r.raise_for_status()
+          raw=r.text.strip(); a,b=raw.find('{'),raw.rfind('}')
+          data=json.loads(raw[a:b+1])
+          nodes=data.get('linear_conversation') or list((data.get('mapping') or {}).values())
+          print('nodes',len(nodes),'title',data.get('title'))
+          for i,node in enumerate(nodes):
+              m=(node or {}).get('message') or {}
+              if not m: continue
+              a=m.get('author') or {}; c=m.get('content') or {}; md=m.get('metadata') or {}
+              role=a.get('role'); name=a.get('name'); recipient=m.get('recipient')
+              parts=c.get('parts') if isinstance(c.get('parts'),list) else []
+              ptypes=[]; fileish=[]
+              for p in parts:
+                  if isinstance(p,dict):
+                      pt=p.get('content_type') or p.get('type') or '<dict>'; ptypes.append(pt)
+                      keys={k:p.get(k) for k in p.keys() if any(x in k.lower() for x in ['file','asset','name','mime','url','sandbox','pointer','download','path'])}
+                      if keys:fileish.append(keys)
+                  elif isinstance(p,str):
+                      ptypes.append('<text>')
+              relevant={k:md.get(k) for k in md if any(x in k.lower() for x in ['file','artifact','document','attachment','sandbox','tool','asset','mime','download','output'])}
+              s=' '.join(map(str,[role,name,recipient,c.get('content_type'),ptypes,list(relevant.keys()),fileish])).lower()
+              if any(x in s for x in ['file','document','artifact','sandbox','pdf','docx','pptx','xlsx','python','code','container','download','attachment']):
+                  print(json.dumps({'i':i,'role':role,'author_name':name,'recipient':recipient,'content_type':c.get('content_type'),'part_types':ptypes,'part_fileish':fileish,'metadata_relevant':relevant,'metadata_keys':sorted(md.keys())},ensure_ascii=False,default=str))
+          PY
