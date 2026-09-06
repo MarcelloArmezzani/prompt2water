@@ -7,6 +7,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmtInt=n=>Number(n||0).toLocaleString('en-US');
 const fmtWater=n=>`${Number(n||0).toFixed(2)} mL`;
 const fmtEnergy=n=>`${Number(n||0).toFixed(3)} Wh`;
+let prefetchTimer=null,lastPrefetch='';
 
 function init(){
   const select=$('#model');
@@ -16,6 +17,15 @@ function init(){
 }
 function thinking(){return document.querySelector('input[name="thinking"]:checked')?.value||'Standard / none';}
 function status(msg,type='info'){$('#status').innerHTML=`<div class="notice ${type}">${msg}</div>`;}
+function looksLikeShare(url){try{const u=new URL(url);return /(^|\.)chatgpt\.com$/i.test(u.hostname)&&/^\/share\/[0-9a-f-]{16,}/i.test(u.pathname);}catch{return false;}}
+
+function prefetch(){
+  const url=$('#share-url').value.trim();
+  if(!looksLikeShare(url)||url===lastPrefetch)return;
+  lastPrefetch=url;
+  loadShare(url).catch(()=>{if(lastPrefetch===url)lastPrefetch='';});
+}
+function schedulePrefetch(){clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,180);}
 
 function render(r){
   $('#results').hidden=false;
@@ -50,4 +60,8 @@ async function analyze(){
   finally{btn.disabled=false;btn.textContent='Analyze';}
 }
 
-init();$('#analyze').addEventListener('click',analyze);$('#share-url').addEventListener('keydown',e=>{if(e.key==='Enter')analyze();});
+init();
+$('#analyze').addEventListener('click',analyze);
+$('#share-url').addEventListener('input',schedulePrefetch);
+$('#share-url').addEventListener('paste',()=>setTimeout(prefetch,0));
+$('#share-url').addEventListener('keydown',e=>{if(e.key==='Enter')analyze();});
