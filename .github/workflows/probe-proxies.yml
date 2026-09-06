@@ -8,27 +8,32 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Validate direct React Flight parser
+      - name: Validate production Flight filtering
         shell: bash
         run: |
           set -e
-          mkdir /tmp/parser && cd /tmp/parser
-          npm init -y >/dev/null
-          npm install chatgpt-share-parser@latest >/dev/null
+          npm install --ignore-scripts >/dev/null
           node --input-type=module <<'JS'
-          import { fetchChatGptShare } from 'chatgpt-share-parser';
-          const cases = {
+          import { CHATGPT_SHARE_HEADERS, decodeLoader, extractLoaderPayload } from 'chatgpt-share-parser';
+          import { parseChatGptShare } from './src/share2.js';
+          const cases={
             normal:'https://chatgpt.com/share/6a9db7fc-2814-83ed-b069-e4ba5dc0ba05',
             image:'https://chatgpt.com/share/6a9dbdb3-7598-83eb-b811-9b9341404c6e',
             failing:'https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
           };
-          for (const [name,url] of Object.entries(cases)) {
-            const t0=Date.now(); const c=await fetchChatGptShare(url); const dt=(Date.now()-t0)/1000;
-            const roles={}, authors={}, assets={image:0,file:0};
-            for(const r of c.replies){roles[r.type]=(roles[r.type]||0)+1;authors[r.authorName]=(authors[r.authorName]||0)+1;for(const a of r.assets||[])assets[a.assetType]=(assets[a.assetType]||0)+1;}
-            console.log(name,JSON.stringify({seconds:dt,title:c.title,model:c.aiModel,replies:c.replies.length,roles,assets,topAuthors:Object.entries(authors).sort((a,b)=>b[1]-a[1]).slice(0,15)}));
+          for(const [name,url] of Object.entries(cases)){
+            const t0=Date.now();
+            const r=await fetch(url,{headers:CHATGPT_SHARE_HEADERS});
+            const html=await r.text();
+            const loader=extractLoaderPayload(html); const decoded=decodeLoader(loader);
+            const route=decoded?.loaderData?.['routes/share.$shareId.($action)'];
+            const data=route?.serverResponse?.data;
+            const c=parseChatGptShare(data);
+            const sums=c.turns.reduce((a,t)=>({turns:a.turns+1,tools:a.tools+t.toolCalls,web:a.web+t.web,code:a.code+t.code,images:a.images+t.generatedImages,videos:a.videos+t.generatedVideos,docs:a.docs+t.generatedDocuments,inImages:a.inImages+t.uploadedImages,inDocs:a.inDocs+t.uploadedDocuments}),{turns:0,tools:0,web:0,code:0,images:0,videos:0,docs:0,inImages:0,inDocs:0});
+            console.log(name,JSON.stringify({seconds:(Date.now()-t0)/1000,bytes:html.length,title:c.title,...sums}));
           }
           JS
