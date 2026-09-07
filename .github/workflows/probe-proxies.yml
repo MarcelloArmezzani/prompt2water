@@ -8,24 +8,23 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Test fresh Jina share rendering
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Benchmark one-fetch share parser
         shell: bash
         run: |
-          set +e
-          SHARE='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          for MODE in cached fresh zero; do
-            OUT=$(mktemp)
-            if [ "$MODE" = fresh ]; then
-              META=$(curl -L --max-time 15 -sS -H 'X-No-Cache: true' -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "https://r.jina.ai/$SHARE" 2>&1)
-            elif [ "$MODE" = zero ]; then
-              META=$(curl -L --max-time 15 -sS -H 'X-Cache-Tolerance: 0' -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "https://r.jina.ai/$SHARE" 2>&1)
-            else
-              META=$(curl -L --max-time 15 -sS -o "$OUT" -w 'code=%{http_code} time=%{time_total} size=%{size_download}' "https://r.jina.ai/$SHARE" 2>&1)
-            fi
-            echo "--- $MODE $META ---"
-            grep -E -m 8 'You said|ChatGPT said|####|Markdown Content|Warning:|Title:' "$OUT" || true
-            echo '--- prefix ---'
-            head -c 1200 "$OUT" | tr '\n' ' '
-            echo
-            rm -f "$OUT"
-          done
+          set -e
+          mkdir -p /tmp/p2w-probe && cd /tmp/p2w-probe
+          npm init -y >/dev/null 2>&1
+          npm install chatgpt-share-parser >/dev/null 2>&1
+          node --input-type=module <<'JS'
+          import { fetchChatGptShare } from 'chatgpt-share-parser';
+          const url = 'https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55';
+          const t0 = performance.now();
+          const chat = await fetchChatGptShare(url);
+          const elapsed = (performance.now()-t0)/1000;
+          const roles = chat.replies.reduce((a,r)=>(a[r.type]=(a[r.type]||0)+1,a),{});
+          const assets = chat.replies.reduce((a,r)=>a+r.assets.length,0);
+          console.log(JSON.stringify({elapsed,title:chat.title,model:chat.aiModel,replies:chat.replies.length,roles,assets}));
+          JS
