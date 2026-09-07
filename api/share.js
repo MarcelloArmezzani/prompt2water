@@ -3,18 +3,20 @@ import {
   extractLoaderPayload,
   decodeLoader,
 } from 'chatgpt-share-parser';
+import { parseChatGptShare } from '../src/share2.js';
 
-const ALLOWED_ORIGIN = 'https://marcelloarmezzani.github.io';
+const ALLOWED_ORIGINS = new Set([
+  'https://marcelloarmezzani.github.io',
+]);
 const memoryCache = globalThis.__P2W_SHARE_CACHE__ || new Map();
 globalThis.__P2W_SHARE_CACHE__ = memoryCache;
 
-function corsHeaders(origin) {
-  return {
-    'Access-Control-Allow-Origin': origin === ALLOWED_ORIGIN ? origin : ALLOWED_ORIGIN,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Vary': 'Origin',
-  };
+function applyCors(req, res) {
+  const origin = String(req.headers.origin || '');
+  if (ALLOWED_ORIGINS.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Vary', 'Origin');
 }
 
 function getShareId(value) {
@@ -85,24 +87,8 @@ function rawDataFromHtml(html) {
   return null;
 }
 
-function slimConversation(data) {
-  // Keep the fields Prompt2Water actually uses, while preserving all message
-  // metadata/content needed for tool, image, video and document detection.
-  const out = {
-    title: data.title || 'Shared ChatGPT conversation',
-    update_time: data.update_time ?? null,
-    conversation_id: data.conversation_id ?? null,
-    linear_conversation: Array.isArray(data.linear_conversation) ? data.linear_conversation : [],
-  };
-  if (isRecord(data.mapping)) out.mapping = data.mapping;
-  if (isRecord(data.model)) out.model = data.model;
-  return out;
-}
-
 export default async function handler(req, res) {
-  const origin = req.headers.origin || '';
-  const headers = corsHeaders(origin);
-  for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -135,7 +121,15 @@ export default async function handler(req, res) {
       res.status(502).json({ error: 'ChatGPT returned the share page, but its conversation payload could not be decoded.' });
       return;
     }
-    const value = slimConversation(data);
+
+    const conversation = parseChatGptShare(data);
+    const value = {
+      id,
+      title: conversation.title,
+      updatedAt: data.update_time ?? null,
+      turns: conversation.turns,
+    };
+
     memoryCache.set(id, { at: Date.now(), value });
     if (memoryCache.size > 32) memoryCache.delete(memoryCache.keys().next().value);
 
