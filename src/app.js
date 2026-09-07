@@ -1,5 +1,5 @@
 import { MODELS, THINKING_CHOICES } from './parameters.js';
-import { loadShare } from './share2.js?v=5';
+import { loadShare } from './share-fast.js?v=1';
 import { estimateConversation } from './core.js?v=4';
 
 const $=s=>document.querySelector(s);
@@ -25,7 +25,7 @@ function prefetch(){
   lastPrefetch=url;
   loadShare(url).catch(()=>{if(lastPrefetch===url)lastPrefetch='';});
 }
-function schedulePrefetch(){clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,180);}
+function schedulePrefetch(){clearTimeout(prefetchTimer);prefetchTimer=setTimeout(prefetch,120);}
 
 function render(r){
   $('#results').hidden=false;
