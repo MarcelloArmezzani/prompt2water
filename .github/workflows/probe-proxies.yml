@@ -1,4 +1,4 @@
-name: Probe ChatGPT share proxies
+name: Probe ChatGPT share endpoint
 on:
   push:
     branches: [main]
@@ -8,24 +8,42 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Benchmark normal share relays
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --ignore-scripts
+      - name: Run production handler twice
         shell: bash
         run: |
-          set +e
-          SHARE='https://chatgpt.com/share/6a9de238-6314-83eb-92a0-330979e85d55'
-          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$SHARE")
-          probe(){
-            NAME="$1"; URL="$2"
-            OUT=$(mktemp)
-            META=$(curl --compressed -L --max-time 20 -sS -o "$OUT" -w 'code=%{http_code} ttfb=%{time_starttransfer} time=%{time_total} size=%{size_download}' "$URL" 2>&1)
-            printf '%s %s flight=' "$NAME" "$META"
-            grep -q 'streamController.enqueue' "$OUT" && printf yes || printf no
-            printf ' title='; grep -o '<title>[^<]*' "$OUT" | head -1 | sed 's/<title>//'
-            rm -f "$OUT"
+          node --input-type=module <<'JS'
+          import handler from './api/share.js';
+          const id='6a9de238-6314-83eb-92a0-330979e85d55';
+          function call(){
+            return new Promise((resolve,reject)=>{
+              const req={method:'GET',headers:{origin:'https://marcelloarmezzani.github.io'},query:{id}};
+              const headers={};
+              const res={
+                statusCode:200,
+                setHeader(k,v){headers[k]=v;},
+                status(n){this.statusCode=n;return this;},
+                json(body){resolve({status:this.statusCode,headers,body});},
+                end(){resolve({status:this.statusCode,headers,body:null});}
+              };
+              Promise.resolve(handler(req,res)).catch(reject);
+            });
           }
-          probe direct "$SHARE"
-          probe allorigins "https://api.allorigins.win/raw?url=$ENC"
-          probe codetabs "https://api.codetabs.com/v1/proxy?quest=$ENC"
-          probe corslol "https://api.cors.lol/?url=$ENC"
-          probe corsproxyio "https://corsproxy.io/?url=$ENC"
-          probe isomorphic "https://cors.isomorphic-git.org/$SHARE"
+          let t=performance.now();
+          const first=await call();
+          const cold=(performance.now()-t)/1000;
+          if(first.status!==200) throw new Error(JSON.stringify(first.body));
+          const bytes=Buffer.byteLength(JSON.stringify(first.body));
+          const activity=first.body.turns.reduce((a,x)=>({
+            tools:a.tools+(x.toolCalls||0),web:a.web+(x.web||0),code:a.code+(x.code||0),
+            img:a.img+(x.generatedImages||0),docs:a.docs+(x.generatedDocuments||0)
+          }),{tools:0,web:0,code:0,img:0,docs:0});
+          t=performance.now();
+          const second=await call();
+          const warm=(performance.now()-t)/1000;
+          console.log(JSON.stringify({cold,warm,bytes,title:first.body.title,turns:first.body.turns.length,activity,cache:second.headers['X-Prompt2Water-Cache']}));
+          JS
