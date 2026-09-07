@@ -1,4 +1,4 @@
-name: Probe ChatGPT share endpoint
+name: Probe ChatGPT data route
 on:
   push:
     branches: [main]
@@ -8,42 +8,23 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: npm install --ignore-scripts
-      - name: Run production handler twice
+      - name: Benchmark React Router data URLs
         shell: bash
         run: |
-          node --input-type=module <<'JS'
-          import handler from './api/share.js';
-          const id='6a9de238-6314-83eb-92a0-330979e85d55';
-          function call(){
-            return new Promise((resolve,reject)=>{
-              const req={method:'GET',headers:{origin:'https://marcelloarmezzani.github.io'},query:{id}};
-              const headers={};
-              const res={
-                statusCode:200,
-                setHeader(k,v){headers[k]=v;},
-                status(n){this.statusCode=n;return this;},
-                json(body){resolve({status:this.statusCode,headers,body});},
-                end(){resolve({status:this.statusCode,headers,body:null});}
-              };
-              Promise.resolve(handler(req,res)).catch(reject);
-            });
+          set +e
+          ID='6a9de238-6314-83eb-92a0-330979e85d55'
+          BASE="https://chatgpt.com/share/$ID"
+          ROUTE='routes/share.$shareId.($action)'
+          ENC=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$ROUTE")
+          probe(){
+            NAME="$1"; URL="$2"
+            OUT=$(mktemp); HDR=$(mktemp)
+            META=$(curl --compressed -L --max-time 15 -sS -D "$HDR" -o "$OUT" -w 'code=%{http_code} ttfb=%{time_starttransfer} time=%{time_total} size=%{size_download}' "$URL" 2>&1)
+            echo "$NAME $META type=$(grep -i '^content-type:' "$HDR" | tail -1 | tr -d '\r')"
+            echo "prefix=$(head -c 180 "$OUT" | tr '\n' ' ')"
+            grep -q 'linear_conversation' "$OUT" && echo 'linear=yes' || echo 'linear=no'
+            rm -f "$OUT" "$HDR"
           }
-          let t=performance.now();
-          const first=await call();
-          const cold=(performance.now()-t)/1000;
-          if(first.status!==200) throw new Error(JSON.stringify(first.body));
-          const bytes=Buffer.byteLength(JSON.stringify(first.body));
-          const activity=first.body.turns.reduce((a,x)=>({
-            tools:a.tools+(x.toolCalls||0),web:a.web+(x.web||0),code:a.code+(x.code||0),
-            img:a.img+(x.generatedImages||0),docs:a.docs+(x.generatedDocuments||0)
-          }),{tools:0,web:0,code:0,img:0,docs:0});
-          t=performance.now();
-          const second=await call();
-          const warm=(performance.now()-t)/1000;
-          console.log(JSON.stringify({cold,warm,bytes,title:first.body.title,turns:first.body.turns.length,activity,cache:second.headers['X-Prompt2Water-Cache']}));
-          JS
+          probe full "$BASE"
+          probe data "$BASE.data"
+          probe routed "$BASE.data?_routes=$ENC"
