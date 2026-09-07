@@ -61,6 +61,18 @@ function writeCache(id, value) {
   }
 }
 
+async function loadStaticCache(id) {
+  try {
+    const response = await fetch(`./cache/${encodeURIComponent(id)}.json`, { cache: 'no-cache' });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!body || !Array.isArray(body.turns)) return null;
+    return { title: body.title || 'Shared ChatGPT conversation', turns: body.turns };
+  } catch {
+    return null;
+  }
+}
+
 async function loadFromApi(id) {
   const endpoint = apiEndpoint(id);
   if (!endpoint) return null;
@@ -80,14 +92,16 @@ export async function loadShare(rawUrl) {
   if (pending.has(info.id)) return pending.get(info.id);
 
   const promise = (async () => {
-    let conversation;
-    const endpoint = apiEndpoint(info.id);
-    if (endpoint) {
-      conversation = await loadFromApi(info.id);
-    } else {
-      // Temporary compatibility path for the GitHub Pages deployment until
-      // the serverless endpoint is connected to it.
-      conversation = await loadLegacyShare(info.url);
+    let conversation = await loadStaticCache(info.id);
+    if (!conversation) {
+      const endpoint = apiEndpoint(info.id);
+      if (endpoint) {
+        conversation = await loadFromApi(info.id);
+      } else {
+        // Temporary compatibility path for GitHub Pages until the serverless
+        // endpoint is connected to the public frontend.
+        conversation = await loadLegacyShare(info.url);
+      }
     }
     writeCache(info.id, conversation);
     return conversation;
