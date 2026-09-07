@@ -1,7 +1,10 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["fra1"],
   "functions": {
     "api/share.js": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "regions": ["fra1"]
     }
   },
   "headers": [
